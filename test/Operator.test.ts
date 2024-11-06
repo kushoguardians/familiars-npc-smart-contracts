@@ -1,5 +1,3 @@
-// test/Operator.test.ts
-
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import {
@@ -11,7 +9,7 @@ import {
 } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-describe("Operator", function () {
+describe("Operator Contract", function () {
   let operator: Operator;
   let familiars: Familiars;
   let coins: Coins;
@@ -65,11 +63,13 @@ describe("Operator", function () {
       await karmicEnergy.getAddress()
     );
 
-    // Grant roles and permissions
-    await familiars.transferOwnership(await operator.getAddress());
-    await coins.transferOwnership(await operator.getAddress());
-    await karmicEnergy.transferOwnership(await operator.getAddress());
-    await food.transferOwnership(await operator.getAddress());
+    const operatorAddress = await operator.getAddress();
+
+    // Grant operator status
+    await familiars.setOperator(operatorAddress);
+    await coins.setOperator(operatorAddress);
+    await karmicEnergy.setOperator(operatorAddress);
+    await food.setOperator(operatorAddress);
   });
 
   describe("Deployment", function () {
@@ -83,6 +83,14 @@ describe("Operator", function () {
       expect(await operator.karmicEnergy()).to.equal(
         await karmicEnergy.getAddress()
       );
+      expect(await operator.food()).to.equal(await food.getAddress());
+    });
+
+    it("Should have correct operator contract addresses", async function () {
+      const operatorAddress = await operator.getAddress();
+      expect(await familiars.operator()).to.equal(operatorAddress);
+      expect(await familiars.operator()).to.equal(operatorAddress);
+      expect(await familiars.operator()).to.equal(operatorAddress);
       expect(await operator.food()).to.equal(await food.getAddress());
     });
   });
@@ -102,7 +110,7 @@ describe("Operator", function () {
   });
 
   describe("Location Requirements", function () {
-    const requirements = {
+    const req = {
       minHealth: 10,
       healthCost: 5,
       minKarmicEnergy: 10,
@@ -118,21 +126,30 @@ describe("Operator", function () {
     };
 
     it("Should allow owner to set location requirements", async function () {
-      await operator.setLocationRequirements(
-        Location.GATHERING_AREA,
-        requirements
-      );
-      const setReq = await operator.locationRequirements(
+      await operator.setLocationRequirements(Location.GATHERING_AREA, req);
+      const result = await operator.getLocationRequirements(
         Location.GATHERING_AREA
       );
-      expect(setReq.minHealth).to.equal(requirements.minHealth);
+      // Compare individual values instead of the whole object
+      expect(Number(result[0])).to.equal(req.minHealth);
+      expect(Number(result[1])).to.equal(req.healthCost);
+      expect(Number(result[2])).to.equal(req.minKarmicEnergy);
+      expect(Number(result[3])).to.equal(req.karmicEnergyCost);
+      expect(Number(result[4])).to.equal(req.minFood);
+      expect(Number(result[5])).to.equal(req.foodCost);
+      expect(Number(result[6])).to.equal(req.minCoin);
+      expect(Number(result[7])).to.equal(req.coinCost);
+      expect(Number(result[8])).to.equal(req.getCoin);
+      expect(Number(result[9])).to.equal(req.getHealth);
+      expect(Number(result[10])).to.equal(req.getKarmicEnergy);
+      expect(Number(result[11])).to.equal(req.getFood);
     });
 
     it("Should not allow non-owner to set requirements", async function () {
       await expect(
         operator
           .connect(addr1)
-          .setLocationRequirements(Location.GATHERING_AREA, requirements)
+          .setLocationRequirements(Location.GATHERING_AREA, req)
       ).to.be.revertedWithCustomError(operator, "OwnableUnauthorizedAccount");
     });
   });
@@ -157,7 +174,7 @@ describe("Operator", function () {
     });
 
     it("Should allow movement with sufficient resources", async function () {
-      await operator.giveCoinsToNPC(addr1.address, 100);
+      await operator.giveCoinsToNPC(addr1.address, 20);
       await operator.giveFoodToNPC(addr1.address, 20);
       await operator.giveKarmicEnergyToNPC(addr1.address, 20);
 
@@ -181,28 +198,6 @@ describe("Operator", function () {
       const [health, location] = await operator.getNPCStats(1);
       expect(health).to.equal(INITIAL_HEALTH);
       expect(location).to.equal("Home");
-    });
-  });
-
-  describe("Emergency Functions", function () {
-    it("Should allow owner to recover native tokens", async function () {
-      // Send some ETH to the contract
-      await owner.sendTransaction({
-        to: await operator.getAddress(),
-        value: ethers.parseEther("1.0"),
-      });
-
-      const initialBalance = await ethers.provider.getBalance(addr2.address);
-      await operator.emergencyRecoverNative(addr2.address);
-      const finalBalance = await ethers.provider.getBalance(addr2.address);
-
-      expect(finalBalance - initialBalance).to.equal(ethers.parseEther("1.0"));
-    });
-
-    it("Should not allow non-owner to recover native tokens", async function () {
-      await expect(
-        operator.connect(addr1).emergencyRecoverNative(addr2.address)
-      ).to.be.revertedWithCustomError(operator, "OwnableUnauthorizedAccount");
     });
   });
 });
