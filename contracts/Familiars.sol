@@ -20,6 +20,10 @@ import "./FamiliarsLib.sol";
 
 contract Familiars is ERC721, Ownable, ERC721URIStorage {
     /**
+     * @dev Operator contract address
+     */
+    address public operator;
+    /**
      * @dev Counter for the next token ID to be minted
      */
     uint256 private _nextTokenId;
@@ -28,6 +32,9 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      * @dev Tracks the most recently minted token ID
      */
     uint256 public latestTokenId;
+
+    // Events
+    event SetNewOperator(address indexed newOpertor);
 
     /**
      * @dev Mapping to track the current location of each token
@@ -41,6 +48,10 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      */
     mapping(uint256 => uint8) private tokenHealth;
 
+    // Mapping to track requirements needed for each location
+    mapping(FamiliarsLib.Location => FamiliarsLib.Requirements)
+        public locationRequirements;
+
     /**
      * @dev Modifier to verify token existence before operations
      * @param tokenId The ID of the token to verify
@@ -49,21 +60,34 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
         _;
     }
+    /**
+     * @dev Modifier to restrict function access to only the specified operator
+     * @param _caller The address of the function caller
+     * @dev Throws if the caller is not the authorized operator
+     */
+    modifier onlyOperator(address _caller) {
+        require(operator == _caller, "Caller is not the operator");
+        _;
+    }
 
     /**
      * @dev Constructor initializes the ERC721 token with name "Familiars" and symbol "FMLRS"
      */
-    constructor(
-    ) ERC721("Familiars", "FMLRS") Ownable(_msgSender()) {}
+    constructor() ERC721("Familiars", "FMLRS") Ownable(_msgSender()) {
+        operator = _msgSender();
+    }
 
     /**
      * @dev Safely mints a new token and sets initial properties
      * @param _to Address to receive the minted token
      * @param _uri The token URI containing metadata
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
-    function safeMint(address _to, string memory _uri) external onlyOwner {
-        uint256 tokenId = _nextTokenId+1;
+    function safeMint(
+        address _to,
+        string memory _uri
+    ) external onlyOperator(_msgSender()) {
+        uint256 tokenId = _nextTokenId + 1;
         latestTokenId = tokenId;
         _safeMint(_to, tokenId);
         _setTokenURI(tokenId, _uri);
@@ -75,12 +99,12 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      * @dev Sets the health value for a specific token
      * @param _tokenId The ID of the token to modify
      * @param _health The new health value (0-50)
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
     function setHealth(
         uint256 _tokenId,
         uint8 _health
-    ) external onlyOwner tokenExists(_tokenId) {
+    ) external onlyOperator(_msgSender()) tokenExists(_tokenId) {
         require(_health > 0 && _health <= 50, "Health out of range");
         tokenHealth[_tokenId] = _health;
         emit FamiliarsLib.SetHealth(_tokenId, _health);
@@ -101,14 +125,33 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      * @dev Moves a NPC to a new location
      * @param _tokenId The ID of the token to move
      * @param _location The destination location
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
     function goToLocation(
         uint256 _tokenId,
         FamiliarsLib.Location _location
-    ) external onlyOwner tokenExists(_tokenId) {
+    ) external onlyOperator(_msgSender()) tokenExists(_tokenId) {
         tokenLocation[_tokenId] = _location;
         emit FamiliarsLib.GoToLocation(_tokenId, locationToString(_location));
+    }
+
+    /**
+     * @dev Sets the requirements for a specific location
+     * @param _location The location to set requirements for
+     * @param _requirements The requirements to be set for the location
+     * @return The updated requirements for the location
+     */
+    function setLocationRequirements(
+        FamiliarsLib.Location _location,
+        FamiliarsLib.Requirements memory _requirements
+    )
+        external
+        onlyOperator(_msgSender())
+        returns (FamiliarsLib.Requirements memory)
+    {
+        locationRequirements[_location] = _requirements;
+        emit FamiliarsLib.SetLocationRequirements(_location, _requirements);
+        return _requirements;
     }
 
     /**
@@ -121,6 +164,19 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
     ) external view tokenExists(_tokenId) returns (string memory) {
         FamiliarsLib.Location _location = tokenLocation[_tokenId];
         return locationToString(_location);
+    }
+
+    /**
+     * @dev Gets the current location of a NPC
+     * @return _requirements The requirements for the location
+     */
+    function getLocationRequirements(
+        FamiliarsLib.Location _location
+    ) external view returns (FamiliarsLib.Requirements memory) {
+        FamiliarsLib.Requirements memory _requirements = locationRequirements[
+            _location
+        ];
+        return _requirements;
     }
 
     /**
@@ -140,6 +196,16 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
         if (_location == FamiliarsLib.Location.GATHERING_AREA)
             return "Gathering Area";
         return "Home";
+    }
+
+    /**
+     * @dev Update operator address
+     * @param _newOperator Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setOperator(address _newOperator) external onlyOwner {
+        operator = _newOperator;
+        emit SetNewOperator(_newOperator);
     }
 
     /**

@@ -41,7 +41,6 @@ library FamiliarsLib {
     event GetCurrentLocation(uint256 indexed tokenId, string location);
     event SetHealth(uint256 indexed tokenId, uint256 health);
     event SetLocationRequirements(Location location, Requirements req);
-    event EmergencyNativeRecovery(address indexed to, uint256 amount);
 
     // Custom errors
     error InsufficientHealth(uint8 required, uint256 current);

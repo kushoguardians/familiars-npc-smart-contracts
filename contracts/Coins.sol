@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "./FamiliarsLib.sol";
 
 /**
  * @title Coins
@@ -12,6 +13,10 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
  * @notice This contract implements ERC20 token with whitelist functionality
  */
 contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
+    /**
+     * @dev Operator contract address
+     */
+    address public operator;
     // Mapping to track whitelisted addresses
     mapping(address => bool) private _whitelist;
 
@@ -23,7 +28,22 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
         ERC20("Coins", "Coins")
         Ownable(_msgSender())
         ERC20Permit("Coins")
-    {}
+    {
+        operator = _msgSender();
+    }
+
+    // Events
+    event SetNewOperator(address indexed newOpertor);
+
+    /**
+     * @dev Modifier to restrict function access to only the specified operator
+     * @param _caller The address of the function caller
+     * @dev Throws if the caller is not the authorized operator
+     */
+    modifier onlyOperator(address _caller) {
+        require(operator == _caller, "Caller is not the operator");
+        _;
+    }
 
     /**
      * @dev Mints new coins to a specified address
@@ -31,7 +51,10 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
      * @param amount Amount of coins to mint (before decimals)
      * @notice Only callable by contract owner
      */
-    function mint(address to, uint256 amount) public onlyOwner {
+    function mint(
+        address to,
+        uint256 amount
+    ) public onlyOperator(_msgSender()) {
         uint256 mintAmount = amount * (10 ** decimals());
         _mint(to, mintAmount);
     }
@@ -85,13 +108,22 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
      * @dev Adds or removes an address from the whitelist
      * @param account Address to modify whitelist status
      * @param value Boolean indicating whitelist status
+     * @notice Only callable by contract operator
+     */
+    function setWhitelisted(
+        address account,
+        bool value
+    ) external onlyOperator(_msgSender()) {
+        _whitelist[account] = value;
+    }
+
+    /**
+     * @dev Update operator address
+     * @param _newOperator Address new operator
      * @notice Only callable by contract owner
      */
-    function setWhitelisted(address account, bool value) external {
-        require(
-            msg.sender == owner(),
-            "Only the owner can modify the whitelist"
-        );
-        _whitelist[account] = value;
+    function setOperator(address _newOperator) external onlyOwner {
+        operator = _newOperator;
+        emit SetNewOperator(_newOperator);
     }
 }

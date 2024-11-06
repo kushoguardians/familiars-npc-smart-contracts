@@ -30,10 +30,6 @@ contract Operator is Ownable, Pausable {
     // Constant used to identify resource tokens across different contracts
     uint256 private constant RESOURCE_TOKEN_ID = 0;
 
-    // Mapping to track requirements needed for each location
-    mapping(FamiliarsLib.Location => FamiliarsLib.Requirements)
-        public locationRequirements;
-
     // Mapping to prevent replay attacks by tracking used nullifiers
     mapping(bytes => bool) private nullifier;
 
@@ -56,9 +52,6 @@ contract Operator is Ownable, Pausable {
         coins = Coins(_coins);
         karmicEnergy = KarmicEnergy(_karmicEnergy);
     }
-
-    // Function to receive ETH
-    receive() external payable {}
 
     /**
      * @dev Creates a new NPC (Non-Player Character) Familiar
@@ -85,9 +78,9 @@ contract Operator is Ownable, Pausable {
         whenNotPaused
         returns (FamiliarsLib.Requirements memory)
     {
-        locationRequirements[_location] = _requirements;
-        emit FamiliarsLib.SetLocationRequirements(_location, _requirements);
-        return _requirements;
+        FamiliarsLib.Requirements memory req = familiars
+            .setLocationRequirements(_location, _requirements);
+        return req;
     }
 
     /**
@@ -120,6 +113,18 @@ contract Operator is Ownable, Pausable {
     }
 
     /**
+     * @dev Gets the current location of a NPC
+     * @return _requirements The requirements for the location
+     */
+    function getLocationRequirements(
+        FamiliarsLib.Location _location
+    ) external view returns (FamiliarsLib.Requirements memory) {
+        FamiliarsLib.Requirements memory _requirements = familiars
+            .getLocationRequirements(_location);
+        return _requirements;
+    }
+
+    /**
      * @dev Checks and processes resource requirements for location changes
      * @param _tokenId The ID of the Familiar
      * @param _tba Token Bound Account address
@@ -130,9 +135,8 @@ contract Operator is Ownable, Pausable {
         address _tba
     ) internal returns (FamiliarsLib.Requirements memory) {
         // Get requirements for the gathering area
-        FamiliarsLib.Requirements memory req = locationRequirements[
-            FamiliarsLib.Location.GATHERING_AREA
-        ];
+        FamiliarsLib.Requirements memory req = familiars
+            .getLocationRequirements(FamiliarsLib.Location.GATHERING_AREA);
 
         // Get current resource balances
         uint256 currentHealth = familiars.getHealth(_tokenId);
@@ -182,7 +186,7 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of coins to mint
      */
-    function giveCoinsToNPC(address to, uint256 amount) public {
+    function giveCoinsToNPC(address to, uint256 amount) public whenNotPaused {
         // TODO: add a tba checker?
         coins.mint(to, amount);
     }
@@ -192,7 +196,7 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of food to mint
      */
-    function giveFoodToNPC(address to, uint256 amount) public {
+    function giveFoodToNPC(address to, uint256 amount) public whenNotPaused {
         // TODO: add a tba checker?
         food.mint(to, amount);
     }
@@ -202,7 +206,10 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of Karmic Energy to mint
      */
-    function giveKarmicEnergyToNPC(address to, uint256 amount) public {
+    function giveKarmicEnergyToNPC(
+        address to,
+        uint256 amount
+    ) public whenNotPaused {
         // TODO: add a tba checker?
         karmicEnergy.mint(to, amount);
     }
@@ -227,15 +234,5 @@ contract Operator is Ownable, Pausable {
         } else {
             _unpause();
         }
-    }
-
-    /**
-     * @dev Emergency function to recover native tokens (ETH)
-     * @param _to Address to receive the recovered funds
-     */
-    function emergencyRecoverNative(address _to) public onlyOwner {
-        uint256 balance = address(this).balance;
-        payable(_to).transfer(balance);
-        emit FamiliarsLib.EmergencyNativeRecovery(_to, balance);
     }
 }

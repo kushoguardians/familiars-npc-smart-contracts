@@ -12,20 +12,40 @@ import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
  */
 contract Food is ERC1155, ERC1155Burnable, Ownable {
     /**
+     * @dev Operator contract address
+     */
+    address public operator;
+
+    /**
      * @dev Constructor initializes the contract with IPFS URI for token metadata
      * @notice Sets the initial URI and transfers ownership to the deployer
      */
     constructor()
         ERC1155("ipfs://QmUE1hMRA85uaaoYAotPxXzAfVUy4hsMHyyjPXvayQQWHB")
         Ownable(_msgSender())
-    {}
+    {
+        operator = _msgSender();
+    }
+
+    // Events
+    event SetNewOperator(address indexed newOpertor);
+
+    /**
+     * @dev Modifier to restrict function access to only the specified operator
+     * @param _caller The address of the function caller
+     * @dev Throws if the caller is not the authorized operator
+     */
+    modifier onlyOperator(address _caller) {
+        require(operator == _caller, "Caller is not the operator");
+        _;
+    }
 
     /**
      * @dev Updates the base URI for token metadata
      * @param newuri New URI to be set
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
-    function setURI(string memory newuri) public onlyOwner {
+    function setURI(string memory newuri) public onlyOperator(_msgSender()) {
         _setURI(newuri);
     }
 
@@ -33,9 +53,12 @@ contract Food is ERC1155, ERC1155Burnable, Ownable {
      * @dev Mints Food tokens
      * @param account Address to receive the tokens
      * @param amount Amount of tokens to mint
-     * @notice Only callable by contract owner, always mints token ID 0
+     * @notice Only callable by contract operator, always mints token ID 0
      */
-    function mint(address account, uint256 amount) public onlyOwner {
+    function mint(
+        address account,
+        uint256 amount
+    ) public onlyOperator(_msgSender()) {
         _mint(account, 0, amount, new bytes(0));
     }
 
@@ -45,14 +68,14 @@ contract Food is ERC1155, ERC1155Burnable, Ownable {
      * @param ids Array of token IDs to mint
      * @param amounts Array of amounts to mint for each token ID
      * @param data Additional data to pass to receivers
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
     function mintBatch(
         address to,
         uint256[] memory ids,
         uint256[] memory amounts,
         bytes memory data
-    ) public onlyOwner {
+    ) public onlyOperator(_msgSender()) {
         _mintBatch(to, ids, amounts, data);
     }
 
@@ -61,13 +84,13 @@ contract Food is ERC1155, ERC1155Burnable, Ownable {
      * @param account Address to burn tokens from
      * @param id Token ID to burn
      * @param value Amount of tokens to burn
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
     function burn(
         address account,
         uint256 id,
         uint256 value
-    ) public virtual override onlyOwner {
+    ) public virtual override onlyOperator(_msgSender()) {
         super.burn(account, id, value);
     }
 
@@ -76,13 +99,23 @@ contract Food is ERC1155, ERC1155Burnable, Ownable {
      * @param account Address to burn tokens from
      * @param ids Array of token IDs to burn
      * @param values Array of amounts to burn for each token ID
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator
      */
     function burnBatch(
         address account,
         uint256[] memory ids,
         uint256[] memory values
-    ) public virtual override onlyOwner {
+    ) public virtual override onlyOperator(_msgSender()) {
         super.burnBatch(account, ids, values);
+    }
+
+    /**
+     * @dev Update operator address
+     * @param _newOperator Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setOperator(address _newOperator) external onlyOwner {
+        operator = _newOperator;
+        emit SetNewOperator(_newOperator);
     }
 }
