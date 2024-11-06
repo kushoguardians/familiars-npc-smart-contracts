@@ -219,7 +219,7 @@ contract Operator is Ownable, Pausable {
      * @param tba Address to set whitelist status for
      * @param status Whitelist status to set
      */
-    function setWhitelistForCoins(address tba, bool status) public onlyOwner {
+    function setWhitelistForCoins(address tba, bool status) public onlyOwner whenNotPaused{
         // TODO: add a checker?
         coins.setWhitelisted(tba, status);
     }
