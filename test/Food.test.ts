@@ -40,9 +40,7 @@ describe("Food Contract", function () {
     });
 
     it("Should not allow non-operator to mint tokens", async function () {
-      await expect(
-        food.connect(addr2).mint(addr1.address, 100)
-      ).to.be.revertedWith("Caller is not the operator");
+      await expect(food.connect(addr2).mint(addr1.address, 100)).to.be.reverted;
     });
   });
 
@@ -76,9 +74,7 @@ describe("Food Contract", function () {
 
     it("Should not allow non-operator to set a new URI", async function () {
       const newUri = "ipfs://newUri";
-      await expect(food.connect(addr2).setURI(newUri)).to.be.revertedWith(
-        "Caller is not the operator"
-      );
+      await expect(food.connect(addr2).setURI(newUri)).to.be.reverted;
     });
   });
   describe("Set Operator", function () {

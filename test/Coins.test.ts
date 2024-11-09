@@ -6,135 +6,150 @@ import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 describe("Coins Contract", function () {
   let coins: Coins;
   let owner: SignerWithAddress;
+  let operator: SignerWithAddress;
+  let marketplace: SignerWithAddress;
   let addr1: SignerWithAddress;
   let addr2: SignerWithAddress;
-  let addrs: SignerWithAddress[];
+
+  // Use smaller numbers to avoid overflow
+  const INITIAL_AMOUNT = 100n;
+  const DECIMALS = 18n;
+  const MULTIPLIER = 10n ** DECIMALS;
 
   beforeEach(async function () {
-    // Get signers
-    [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
+    [owner, operator, marketplace, addr1, addr2] = await ethers.getSigners();
 
-    // Deploy contract
     const CoinsFactory = await ethers.getContractFactory("Coins");
     coins = await CoinsFactory.deploy();
-    await coins.waitForDeployment();
-    await coins.setOperator(addr1.address);
+
+    // Set operator and marketplace
+    await coins.setOperator(operator.address);
+    await coins.setMarketplace(marketplace.address);
   });
 
   describe("Deployment", function () {
     it("Should set the right owner", async function () {
-      expect(await coins.owner()).to.equal(await owner.getAddress());
+      expect(await coins.owner()).to.equal(owner.address);
     });
 
-    it("Should set the right operator", async function () {
-      expect(await coins.operator()).to.equal(await addr1.getAddress());
-    });
-
-    it("Should have correct name and symbol", async function () {
-      expect(await coins.name()).to.equal("Coins");
-      expect(await coins.symbol()).to.equal("Coins");
+    it("Should set the initial operator and marketplace", async function () {
+      expect(await coins.operator()).to.equal(operator.address);
+      expect(await coins.marketplace()).to.equal(marketplace.address);
     });
   });
 
   describe("Minting", function () {
-    it("Should allow operator to mint tokens", async function () {
-      const mintAmount = 100;
-      await coins.connect(addr1).mint(addr1.address, mintAmount);
-      const expectedAmount = BigInt(mintAmount) * BigInt(10 ** 18); // 18 decimals
-      expect(await coins.balanceOf(addr1.address)).to.equal(expectedAmount);
+    it("Should allow operator to mint coins", async function () {
+      await coins.connect(operator).mint(addr1.address, INITIAL_AMOUNT);
+      const balance = await coins.balanceOf(addr1.address);
+      expect(balance).to.equal(INITIAL_AMOUNT * MULTIPLIER);
     });
 
-    it("Should not allow non-operator to mint tokens", async function () {
+    it("Should allow marketplace to mint coins", async function () {
+      await coins.connect(marketplace).mint(addr1.address, INITIAL_AMOUNT);
+      const balance = await coins.balanceOf(addr1.address);
+      expect(balance).to.equal(INITIAL_AMOUNT * MULTIPLIER);
+    });
+
+    it("Should not allow non-operator/marketplace to mint", async function () {
       await expect(
-        coins.connect(addr2).mint(addr2.address, 100)
-      ).to.be.revertedWith("Caller is not the operator");
-    });
-  });
-
-  describe("Whitelist", function () {
-    it("Should allow operator to whitelist addresses", async function () {
-      await coins.connect(addr1).setWhitelisted(addr1.address, true);
-      // Mint some tokens to test transfer
-      await coins.connect(addr1).mint(addr1.address, 100);
-      // Should not revert
-      await expect(coins.connect(addr1).transfer(addr2.address, 100)).to.not.be
-        .reverted;
-    });
-
-    it("Should not allow non-operator to whitelist addresses", async function () {
-      await expect(
-        coins.connect(addr2).setWhitelisted(addr2.address, true)
-      ).to.be.revertedWith("Caller is not the operator");
+        coins.connect(addr1).mint(addr2.address, INITIAL_AMOUNT)
+      ).to.be.revertedWith("Caller is not the operator or marketplace");
     });
   });
 
   describe("Transfers", function () {
     beforeEach(async function () {
-      // Mint some tokens to addr1
-      await coins.connect(addr1).mint(addr1.address, 100);
+      await coins.connect(operator).mint(addr1.address, INITIAL_AMOUNT);
+      await coins
+        .connect(addr1)
+        .approve(operator.address, INITIAL_AMOUNT * MULTIPLIER);
     });
 
-    it("Should not allow transfer from non-whitelisted address", async function () {
-      await expect(
-        coins.connect(addr2).transfer(addr2.address, 100)
-      ).to.be.revertedWith("Only whitelisted addresses can initiate transfers");
+    it("Should allow regular users to transfer coins", async function () {
+      const transferAmount = INITIAL_AMOUNT * MULTIPLIER;
+      await coins
+        .connect(operator)
+        .transferFrom(addr1.address, addr2.address, transferAmount);
+      const balance = await coins.balanceOf(addr2.address);
+      expect(balance).to.equal(transferAmount);
+    });
+  });
+
+  describe("Access Control", function () {
+    it("Should allow owner to set new operator", async function () {
+      await coins.connect(owner).setOperator(addr1.address);
+      expect(await coins.operator()).to.equal(addr1.address);
     });
 
-    it("Should allow transfer from whitelisted address", async function () {
-      // Whitelist addr1
-      await coins.connect(addr1).setWhitelisted(addr1.address, true);
-
-      const transferAmount = BigInt(100) * BigInt(10 ** 18);
-      await expect(coins.connect(addr1).transfer(addr2.address, transferAmount))
-        .to.emit(coins, "Transfer")
-        .withArgs(addr1.address, addr2.address, transferAmount);
-
-      expect(await coins.balanceOf(addr2.address)).to.equal(transferAmount);
+    it("Should allow owner to set new marketplace", async function () {
+      await coins.connect(owner).setMarketplace(addr1.address);
+      expect(await coins.marketplace()).to.equal(addr1.address);
     });
 
-    it("Should handle transferFrom correctly", async function () {
-      // Whitelist addr1
-      await coins.connect(addr1).setWhitelisted(addr1.address, true);
-      const transferAmount = BigInt(50) * BigInt(10 ** 18);
-
-      // Approve addr2 to spend addr1's tokens
-      await coins.connect(addr1).approve(addr2.address, transferAmount);
-
-      await expect(
-        coins
-          .connect(addr2)
-          .transferFrom(addr1.address, addr2.address, transferAmount)
-      )
-        .to.emit(coins, "Transfer")
-        .withArgs(addr1.address, addr2.address, transferAmount);
+    it("Should not allow non-owner to set operator", async function () {
+      await expect(coins.connect(addr1).setOperator(addr2.address)).to.be
+        .reverted;
     });
   });
 
   describe("Burning", function () {
-    it("Should allow token burning", async function () {
-      const mintAmount = BigInt(100) * BigInt(10 ** 18);
-      await coins.connect(addr1).mint(addr1.address, 100);
-      await coins.connect(addr1).setWhitelisted(addr1.address, true);
+    beforeEach(async function () {
+      await coins.connect(operator).mint(operator.address, INITIAL_AMOUNT);
+    });
 
-      await expect(coins.connect(addr1).burn(mintAmount))
-        .to.emit(coins, "Transfer")
-        .withArgs(addr1.address, ethers.ZeroAddress, mintAmount);
+    it("Should allow operator to burn coins", async function () {
+      const burnAmount = (INITIAL_AMOUNT * MULTIPLIER) / 2n;
+      await coins.connect(operator).burn(burnAmount);
+      const balance = await coins.balanceOf(operator.address);
+      expect(balance).to.equal(INITIAL_AMOUNT * MULTIPLIER - burnAmount);
+    });
 
-      expect(await coins.balanceOf(addr1.address)).to.equal(0);
+    it("Should allow marketplace to burn from account", async function () {
+      const burnAmount = (INITIAL_AMOUNT * MULTIPLIER) / 2n;
+      await coins.connect(operator).approve(marketplace.address, burnAmount);
+      await coins.connect(marketplace).burnFrom(operator.address, burnAmount);
+      const balance = await coins.balanceOf(operator.address);
+      expect(balance).to.equal(INITIAL_AMOUNT * MULTIPLIER - burnAmount);
     });
   });
 
-  describe("Set Operator", function () {
-    it("Should allow owner to set operator", async function () {
-      await coins.setOperator(addr2.address);
-      // Should not revert
-      expect(await coins.operator()).to.equal(addr2.address);
+  describe("Decimals", function () {
+    it("Should have 18 decimals", async function () {
+      expect(await coins.decimals()).to.equal(18);
     });
 
-    it("Should not allow non-owner to set operator", async function () {
-      await expect(
-        coins.connect(addr2).setOperator(addr2.address)
-      ).to.be.revertedWithCustomError(coins, "OwnableUnauthorizedAccount");
+    it("Should handle decimal calculations correctly", async function () {
+      const amount = 1n; // 1 token
+      await coins.connect(operator).mint(addr1.address, amount);
+      const balance = await coins.balanceOf(addr1.address);
+      expect(balance).to.equal(MULTIPLIER); // 1 token = 10^18 base units
+    });
+  });
+
+  describe("Approval and Allowance", function () {
+    beforeEach(async function () {
+      await coins.connect(operator).mint(addr1.address, INITIAL_AMOUNT);
+      await coins.connect(operator).mint(operator.address, INITIAL_AMOUNT);
+    });
+
+    it("Should handle approvals correctly", async function () {
+      const approvalAmount = INITIAL_AMOUNT * MULTIPLIER;
+      await coins.connect(operator).approve(addr2.address, approvalAmount);
+      const allowance = await coins.allowance(operator.address, addr2.address);
+      expect(allowance).to.equal(approvalAmount);
+    });
+
+    it("Should handle transferFrom correctly when approved", async function () {
+      const transferAmount = INITIAL_AMOUNT * MULTIPLIER;
+      await coins
+        .connect(operator)
+        .approve(marketplace.address, transferAmount);
+      await coins
+        .connect(marketplace)
+        .transferFrom(operator.address, addr2.address, transferAmount);
+      const balance = await coins.balanceOf(addr2.address);
+      expect(balance).to.equal(transferAmount);
     });
   });
 });

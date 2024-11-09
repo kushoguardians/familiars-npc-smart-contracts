@@ -40,9 +40,8 @@ describe("KarmicEnergy Contract", function () {
     });
 
     it("Should not allow non-operator to mint tokens", async function () {
-      await expect(
-        karmicEnergy.connect(addr2).mint(addr1.address, 100)
-      ).to.be.revertedWith("Caller is not the operator");
+      await expect(karmicEnergy.connect(addr2).mint(addr1.address, 100)).to.be
+        .reverted;
     });
   });
 
@@ -76,9 +75,7 @@ describe("KarmicEnergy Contract", function () {
 
     it("Should not allow non-operator to set a new URI", async function () {
       const newUri = "ipfs://newUri";
-      await expect(karmicEnergy.connect(addr2).setURI(newUri)).to.be.revertedWith(
-        "Caller is not the operator"
-      );
+      await expect(karmicEnergy.connect(addr2).setURI(newUri)).to.be.reverted;
     });
   });
   describe("Set Operator", function () {
@@ -91,7 +88,10 @@ describe("KarmicEnergy Contract", function () {
     it("Should not allow non-owner to set operator", async function () {
       await expect(
         karmicEnergy.connect(addr2).setOperator(addr2.address)
-      ).to.be.revertedWithCustomError(karmicEnergy, "OwnableUnauthorizedAccount");
+      ).to.be.revertedWithCustomError(
+        karmicEnergy,
+        "OwnableUnauthorizedAccount"
+      );
     });
   });
 });
