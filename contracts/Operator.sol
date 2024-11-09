@@ -9,6 +9,10 @@ import "./FamiliarsLib.sol";
 import "./Coins.sol";
 import "./KarmicEnergy.sol";
 import "./Food.sol";
+import "./FamiliarsItem.sol";
+import "./Marketplace.sol";
+import "./ERC6551Registry.sol";
+import "hardhat/console.sol";
 
 /**
  * @title Operator
@@ -16,22 +20,25 @@ import "./Food.sol";
  * @notice Handles location changes and resource management for the game
  */
 contract Operator is Ownable, Pausable {
+    address TBA_REGISTRY;
+    address TBA_IMPL;
+    uint256 constant CHAINID = 84532;
     // Contract instances for different game components
     Familiars public familiars; // Contract managing Familiar NFTs
     Coins public coins; // Contract managing in-game currency
     KarmicEnergy public karmicEnergy; // Contract managing Karmic Energy resource
     Food public food; // Contract managing Food resource
+    FamiliarsItem public familiarsItem; // Contract of familiar items equippable
+    Marketplace public marketplace;
 
     // Address authorized to verify certain operations
     address verifier;
 
-    //Todo: add marketplace contract and functionality
+    // Nonce for signing
+    uint256 public nonce;
 
     // Constant used to identify resource tokens across different contracts
     uint256 private constant RESOURCE_TOKEN_ID = 0;
-
-    // Mapping to prevent replay attacks by tracking used nullifiers
-    mapping(bytes => bool) private nullifier;
 
     /**
      * @dev Constructor initializes the Operator with necessary contract addresses
@@ -44,76 +51,120 @@ contract Operator is Ownable, Pausable {
         address _familiars,
         address _food,
         address _coins,
-        address _karmicEnergy
+        address _karmicEnergy,
+        address _familiarsItem,
+        address _marketplace,
+        address _tbaRegistry,
+        address _tbaAccountImpl
     ) Ownable(_msgSender()) {
         verifier = _msgSender();
         familiars = Familiars(_familiars);
         food = Food(_food);
         coins = Coins(_coins);
         karmicEnergy = KarmicEnergy(_karmicEnergy);
+        familiarsItem = FamiliarsItem(_familiarsItem);
+        marketplace = Marketplace(_marketplace);
+        TBA_REGISTRY = _tbaRegistry;
+        TBA_IMPL = _tbaAccountImpl;
+        nonce = 1;
+    }
+
+    modifier validSig(bytes calldata _signature) {
+        address signer = FamiliarsLib.getVerifier(
+            nonce,
+            CHAINID,
+            _msgSender(),
+            _signature
+        );
+        require(signer == verifier, "Invalid signature");
+        _;
     }
 
     /**
      * @dev Creates a new NPC (Non-Player Character) Familiar
      * @param _to Address to receive the NPC
      * @param _uri Metadata URI for the NPC
+     * @param _signature The signature of the verifier
+     * @param _initData The initial data
      */
-    function createNPC(address _to, string memory _uri) external whenNotPaused {
-        // TODO: add a checker?
-        familiars.safeMint(_to, _uri);
-    }
-
-    /**
-     * @dev Sets the requirements for a specific location
-     * @param _location The location to set requirements for
-     * @param _requirements The requirements to be set for the location
-     * @return The updated requirements for the location
-     */
-    function setLocationRequirements(
-        FamiliarsLib.Location _location,
-        FamiliarsLib.Requirements memory _requirements
-    )
-        external
-        onlyOwner
-        whenNotPaused
-        returns (FamiliarsLib.Requirements memory)
-    {
-        FamiliarsLib.Requirements memory req = familiars
-            .setLocationRequirements(_location, _requirements);
-        return req;
+    function createNPC(
+        address _to,
+        string memory _uri,
+        bytes calldata _signature,
+        bytes calldata _initData
+    ) external whenNotPaused validSig(_signature) {
+        uint256 _tokenId = familiars.safeMint(_to, _uri);
+        _createTba(_tokenId, _initData);
+        nonce += 1;
     }
 
     /**
      * @dev Moves a Familiar to a new location after checking requirements
      * @param _tokenId The ID of the Familiar
-     * @param _tba Token Bound Account address
      * @param _location The destination location
+     * @param _signature The signature of the verifier
      */
     function goToLocation(
         uint256 _tokenId,
-        address _tba,
-        FamiliarsLib.Location _location
-    ) external whenNotPaused {
-        _reqChecker(_tokenId, _tba);
+        FamiliarsLib.Location _location,
+        bytes calldata _signature
+    ) external whenNotPaused validSig(_signature) {
+        address _tba = _getTba(_tokenId);
+        require(_tba != address(0), "Token not bound to address");
+        _reqChecker(_tokenId, _tba, _location);
         familiars.goToLocation(_tokenId, _location);
+        nonce += 1;
     }
 
     /**
-     * @dev Gets the current stats of a Familiar
-     * @param tokenId The ID of the Familiar
-     * @return health Current health of the Familiar
-     * @return location Current location of the Familiar
+     * @dev Retrieves the stats of a Non-Player Character (NPC) associated with a given token ID.
+     * @param tokenId The token ID for which to retrieve NPC stats.
+     * @return A tuple containing the NPC's health, current location, coin balance, karmic energy balance,
+     *         food balance, and equipped items.
      */
     function getNPCStats(
         uint256 tokenId
-    ) external view returns (uint8, string memory) {
+    )
+        external
+        view
+        returns (
+            uint8, // Health of the NPC
+            string memory, // Current location of the NPC
+            uint256, // Coin balance of the NPC
+            uint256, // Karmic energy balance of the NPC
+            uint256, // Food balance of the NPC
+            FamiliarsLib.EquipItems memory // Equipped items of the NPC
+        )
+    {
+        // Retrieve the address associated with the given tokenId
+        address tba = _getTba(tokenId);
+        require(tba != address(0), "Token not bound to address");
+
+        // Retrieve the equipped items for the NPC using the tokenId
+        FamiliarsLib.EquipItems memory _equippedItems = familiars
+            .getEquippedItems(tokenId);
+
+        // Retrieve the health of the NPC using the tokenId
         uint8 health = familiars.getHealth(tokenId);
-        string memory location = familiars.getCurrentLocation(tokenId);
-        return (health, location);
+
+        // Retrieve the coin balance of the NPC from the coins contract
+        uint256 _coins = coins.balanceOf(tba);
+
+        // Retrieve the karmic energy balance of the NPC from the karmicEnergy contract
+        uint256 _karmic = karmicEnergy.balanceOf(tba, RESOURCE_TOKEN_ID);
+
+        // Retrieve the food balance of the NPC from the food contract
+        uint256 _food = food.balanceOf(tba, RESOURCE_TOKEN_ID);
+
+        // Retrieve the current location of the NPC using the tokenId
+        (string memory location, ) = familiars.getCurrentLocation(tokenId);
+
+        // Return the NPC's stats as a tuple
+        return (health, location, _coins, _karmic, _food, _equippedItems);
     }
 
     /**
-     * @dev Gets the current location of a NPC
+     * @dev Gets the current location requirements
      * @return _requirements The requirements for the location
      */
     function getLocationRequirements(
@@ -125,29 +176,134 @@ contract Operator is Ownable, Pausable {
     }
 
     /**
-     * @dev Checks and processes resource requirements for location changes
+     * @dev Equips items (mouth and/or head) to a specific token
+     * @param _tokenId The ID of the token to equip items to
+     * @param _mouthTokenId The ID of the mouth item to equip (0 if none)
+     * @param _headTokenId The ID of the head item to equip (0 if none)
+     * @param _signature The signature of the verifier
+     */
+    function equipItem(
+        uint256 _tokenId,
+        uint256 _mouthTokenId,
+        uint256 _headTokenId,
+        bytes calldata _signature
+    ) external whenNotPaused validSig(_signature) {
+        address tba = _getTba(_tokenId);
+        require(tba != address(0), "Token not bound to address");
+        familiars.equipItem(
+            _tokenId,
+            _mouthTokenId,
+            _headTokenId,
+            tba,
+            address(familiarsItem)
+        );
+        nonce += 1;
+    }
+
+    /**
+     * @dev Exchanges Karmic Energy for a specific token
+     * @param _tokenId The ID of the token to exchange energy for
+     * @param _karmicEnergyAmt The amount of Karmic Energy to exchange
+     * @param _signature The signature of the verifier
+     */
+    function exchangeKarmicEnergy(
+        uint256 _tokenId,
+        uint256 _karmicEnergyAmt,
+        bytes calldata _signature
+    ) external whenNotPaused validSig(_signature) {
+        address tba = _getTba(_tokenId);
+        require(tba != address(0), "Token not bound to address");
+        (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
+        require(
+            loc == FamiliarsLib.Location.MARKET_PLACE,
+            "NPC location should be on marketplace"
+        );
+        marketplace.exchangeKarmicEnergy(_karmicEnergyAmt, tba);
+        nonce += 1;
+    }
+
+    /**
+     * @dev Main function that checks requirements and processes resource changes
      * @param _tokenId The ID of the Familiar
      * @param _tba Token Bound Account address
-     * @return Requirements structure containing the processed costs
      */
     function _reqChecker(
         uint256 _tokenId,
-        address _tba
-    ) internal returns (FamiliarsLib.Requirements memory) {
-        // Get requirements for the gathering area
-        FamiliarsLib.Requirements memory req = familiars
-            .getLocationRequirements(FamiliarsLib.Location.GATHERING_AREA);
+        address _tba,
+        FamiliarsLib.Location _location
+    ) internal {
+        // Split processing into two main parts for better organization
+        _checkAndUpdateEquipment(_tokenId, _tba);
+        _processResourceChanges(_tokenId, _tba, _location);
+    }
 
-        // Get current resource balances
+    /**
+     * @dev Checks and updates equipment status for a Familiar
+     * @param _tokenId The ID of the Familiar
+     * @param _tba Token Bound Account address
+     */
+    function _checkAndUpdateEquipment(uint256 _tokenId, address _tba) private {
+        // Get currently equipped items
+        FamiliarsLib.EquipItems memory equipped = familiars.getEquippedItems(
+            _tokenId
+        );
+        bool needsUpdate = false;
+        FamiliarsLib.EquipItems memory newEquippedItems = FamiliarsLib
+            .EquipItems({mouth: 0, head: 0});
+
+        // Check if head item is still owned by the account
+        if (equipped.head != 0) {
+            if (familiarsItem.balanceOf(_tba, equipped.head) > 0) {
+                newEquippedItems.head = equipped.head;
+            } else {
+                needsUpdate = true;
+            }
+        }
+
+        // Check if mouth item is still owned by the account
+        if (equipped.mouth != 0) {
+            if (familiarsItem.balanceOf(_tba, equipped.mouth) > 0) {
+                newEquippedItems.mouth = equipped.mouth;
+            } else {
+                needsUpdate = true;
+            }
+        }
+
+        // Update equipment if items were removed
+        if (needsUpdate) {
+            familiars.equipItem(
+                _tokenId,
+                newEquippedItems.mouth,
+                newEquippedItems.head,
+                _tba,
+                address(familiarsItem)
+            );
+        }
+    }
+
+    /**
+     * @dev Processes all resource changes for a Familiar
+     * @param _tokenId The ID of the Familiar
+     * @param _tba Token Bound Account address
+     */
+    function _processResourceChanges(
+        uint256 _tokenId,
+        address _tba,
+        FamiliarsLib.Location _location
+    ) private {
+        // Get location requirements
+        FamiliarsLib.Requirements memory req = familiars
+            .getLocationRequirements(_location);
+        // Get current balances of all resources
         uint256 currentHealth = familiars.getHealth(_tokenId);
         uint256 currentKarmicEnergy = karmicEnergy.balanceOf(
             _tba,
             RESOURCE_TOKEN_ID
         );
+
         uint256 currentFood = food.balanceOf(_tba, RESOURCE_TOKEN_ID);
         uint256 currentCoins = coins.balanceOf(_tba);
-
-        // Verify resource requirements are met
+        // Verify all requirements are met
         FamiliarsLib.checkRequirements(
             currentHealth,
             currentCoins,
@@ -156,29 +312,165 @@ contract Operator is Ownable, Pausable {
             req
         );
 
-        // Process resource deductions based on requirements
-        if (req.healthCost > 0) {
-            familiars.setHealth(
-                _tokenId,
-                uint8(currentHealth - req.healthCost)
-            );
-        }
+        // Get attributes of equipped items
+        (
+            FamiliarsLib.ItemAttributes memory headAttr,
+            FamiliarsLib.ItemAttributes memory mouthAttr
+        ) = _getEquippedItemAttributes(_tokenId);
 
-        if (req.karmicEnergyCost > 0) {
-            //Todo: determine if karmicEnergy should go to treasury or be burned
-            // karmicEnergy.burn(_tba, 0, req.karmicEnergyCost);
-        }
+        // Process changes for each resource type
+        _processHealthChanges(
+            _tokenId,
+            currentHealth,
+            req,
+            headAttr,
+            mouthAttr
+        );
+        _processKarmicEnergyChanges(_tba, req, headAttr, mouthAttr);
+        _processFoodChanges(_tba, req, headAttr, mouthAttr);
+        _processCoinChanges(_tba, req, headAttr, mouthAttr);
+    }
 
-        if (req.foodCost > 0) {
-            //Todo: determine if food should go to treasury or be burned
-            // food.burn(_tba, 0, req.foodCost);
-        }
+    /**
+     * @dev Retrieves attributes for equipped items
+     * @param _tokenId The ID of the Familiar
+     * @return headAttr Attributes of equipped head item
+     * @return mouthAttr Attributes of equipped mouth item
+     */
+    function _getEquippedItemAttributes(
+        uint256 _tokenId
+    )
+        private
+        view
+        returns (
+            FamiliarsLib.ItemAttributes memory headAttr,
+            FamiliarsLib.ItemAttributes memory mouthAttr
+        )
+    {
+        FamiliarsLib.EquipItems memory equipped = familiars.getEquippedItems(
+            _tokenId
+        );
 
-        if (req.coinCost > 0) {
-            //Todo: determine if coins should go to treasury or be burned
-            // coins.burnFrom(_tba, req.coinCost);
+        if (equipped.head != 0) {
+            headAttr = familiarsItem.getItemAttributes(equipped.head);
         }
-        return req;
+        if (equipped.mouth != 0) {
+            mouthAttr = familiarsItem.getItemAttributes(equipped.mouth);
+        }
+    }
+
+    /**
+     * @dev Processes health changes for a Familiar
+     * @param _tokenId The ID of the Familiar
+     * @param currentHealth Current health value
+     * @param req Location requirements
+     * @param headAttr Head item attributes
+     * @param mouthAttr Mouth item attributes
+     */
+    function _processHealthChanges(
+        uint256 _tokenId,
+        uint256 currentHealth,
+        FamiliarsLib.Requirements memory req,
+        FamiliarsLib.ItemAttributes memory headAttr,
+        FamiliarsLib.ItemAttributes memory mouthAttr
+    ) private {
+        unchecked {
+            uint256 healthGain = req.getHealth +
+                headAttr.healthIncrease +
+                mouthAttr.healthIncrease;
+            uint256 healthLoss = req.healthCost +
+                headAttr.healthDecrease +
+                mouthAttr.healthDecrease;
+            uint256 newHealth;
+            if (currentHealth + healthGain >= healthLoss) {
+                newHealth = currentHealth + healthGain - healthLoss;
+            } else {
+                newHealth = 0;
+            }
+
+            familiars.setHealth(_tokenId, uint8(newHealth));
+        }
+    }
+
+    /**
+     * @dev Processes Karmic Energy changes
+     * @param _tba Token Bound Account address
+     * @param req Location requirements
+     * @param headAttr Head item attributes
+     * @param mouthAttr Mouth item attributes
+     */
+    function _processKarmicEnergyChanges(
+        address _tba,
+        FamiliarsLib.Requirements memory req,
+        FamiliarsLib.ItemAttributes memory headAttr,
+        FamiliarsLib.ItemAttributes memory mouthAttr
+    ) private {
+        uint256 karmicGain = req.getKarmicEnergy +
+            headAttr.karmicIncrease +
+            mouthAttr.karmicIncrease;
+        uint256 karmicLoss = req.karmicEnergyCost +
+            headAttr.karmicDecrease +
+            mouthAttr.karmicDecrease;
+
+        if (karmicGain > karmicLoss) {
+            _giveKarmicEnergyToNPC(_tba, karmicGain - karmicLoss);
+        } else if (karmicGain < karmicLoss) {
+            karmicEnergy.burn(_tba, RESOURCE_TOKEN_ID, karmicLoss - karmicGain);
+        }
+    }
+
+    /**
+     * @dev Processes Food changes
+     * @param _tba Token Bound Account address
+     * @param req Location requirements
+     * @param headAttr Head item attributes
+     * @param mouthAttr Mouth item attributes
+     */
+    function _processFoodChanges(
+        address _tba,
+        FamiliarsLib.Requirements memory req,
+        FamiliarsLib.ItemAttributes memory headAttr,
+        FamiliarsLib.ItemAttributes memory mouthAttr
+    ) private {
+        uint256 foodGain = req.getFood +
+            headAttr.foodIncrease +
+            mouthAttr.foodIncrease;
+        uint256 foodLoss = req.foodCost +
+            headAttr.foodDecrease +
+            mouthAttr.foodDecrease;
+
+        if (foodGain > foodLoss) {
+            _giveFoodToNPC(_tba, foodGain - foodLoss);
+        } else if (foodGain < foodLoss) {
+            food.burn(_tba, RESOURCE_TOKEN_ID, foodLoss - foodGain);
+        }
+    }
+
+    /**
+     * @dev Processes Coin changes
+     * @param _tba Token Bound Account address
+     * @param req Location requirements
+     * @param headAttr Head item attributes
+     * @param mouthAttr Mouth item attributes
+     */
+    function _processCoinChanges(
+        address _tba,
+        FamiliarsLib.Requirements memory req,
+        FamiliarsLib.ItemAttributes memory headAttr,
+        FamiliarsLib.ItemAttributes memory mouthAttr
+    ) private {
+        uint256 coinGain = req.getCoin +
+            headAttr.coinIncrease +
+            mouthAttr.coinIncrease;
+        uint256 coinLoss = req.coinCost +
+            headAttr.coinDecrease +
+            mouthAttr.coinDecrease;
+
+        if (coinGain > coinLoss) {
+            _giveCoinsToNPC(_tba, coinGain - coinLoss);
+        } else if (coinGain < coinLoss) {
+            coins.burnFrom(_tba, coinLoss - coinGain);
+        }
     }
 
     /**
@@ -186,8 +478,7 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of coins to mint
      */
-    function giveCoinsToNPC(address to, uint256 amount) public whenNotPaused {
-        // TODO: add a tba checker?
+    function _giveCoinsToNPC(address to, uint256 amount) internal {
         coins.mint(to, amount);
     }
 
@@ -196,8 +487,7 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of food to mint
      */
-    function giveFoodToNPC(address to, uint256 amount) public whenNotPaused {
-        // TODO: add a tba checker?
+    function _giveFoodToNPC(address to, uint256 amount) internal {
         food.mint(to, amount);
     }
 
@@ -206,22 +496,46 @@ contract Operator is Ownable, Pausable {
      * @param to Recipient address
      * @param amount Amount of Karmic Energy to mint
      */
-    function giveKarmicEnergyToNPC(
-        address to,
-        uint256 amount
-    ) public whenNotPaused {
-        // TODO: add a tba checker?
+    function _giveKarmicEnergyToNPC(address to, uint256 amount) internal {
         karmicEnergy.mint(to, amount);
     }
 
     /**
-     * @dev Sets whitelist status for an address in the Coins contract
-     * @param tba Address to set whitelist status for
-     * @param status Whitelist status to set
+     * @dev Utility function for getting TBA
+     * @param _tokenId Token id of the NFT
+     * @return address
      */
-    function setWhitelistForCoins(address tba, bool status) public onlyOwner whenNotPaused{
-        // TODO: add a checker?
-        coins.setWhitelisted(tba, status);
+    function _createTba(
+        uint256 _tokenId,
+        bytes calldata initData
+    ) internal returns (address) {
+        ERC6551Registry registry = ERC6551Registry(TBA_REGISTRY);
+        return
+            registry.createAccount(
+                TBA_IMPL,
+                CHAINID,
+                address(familiars),
+                _tokenId,
+                3123,
+                initData
+            );
+    }
+
+    /**
+     * @dev Utility function for getting TBA
+     * @param _tokenId Token id of the NFT
+     * @return address
+     */
+    function _getTba(uint256 _tokenId) public view returns (address) {
+        ERC6551Registry registry = ERC6551Registry(TBA_REGISTRY);
+        return
+            registry.account(
+                TBA_IMPL,
+                CHAINID,
+                address(familiars),
+                _tokenId,
+                3123
+            );
     }
 
     /**
@@ -234,5 +548,14 @@ contract Operator is Ownable, Pausable {
         } else {
             _unpause();
         }
+    }
+
+    /**
+     * @dev Pauses or unpauses the contract
+     * @param _newVerifier True to pause, false to unpause
+     */
+    function setVerifier(address _newVerifier) external onlyOwner {
+        verifier = _newVerifier;
+        emit FamiliarsLib.SetVerifier(_newVerifier);
     }
 }

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 /**
  * @title FamiliarsLib
  * @dev Library containing core functionality for the Familiars game mechanics
@@ -14,7 +17,33 @@ library FamiliarsLib {
         KARMIC_WELLSPRING, // Location for karma-related activities
         KARMIC_TOWER, // Advanced karma-related location
         HOME, // Default resting location
-        GATHERING_AREA // Resource gathering location
+        GATHERING_AREA, // Resource gathering location
+        MARKET_PLACE // Market place to buy food and coins excgange of karmic energy
+    }
+
+    /**
+     * @dev Struct representing the attributes that can be modified by Familiar Items
+     * @notice Includes minimum requirements and resource costs associated with each attribute
+     */
+    struct ItemAttributes {
+        uint8 healthIncrease;
+        uint8 healthDecrease;
+        uint8 karmicIncrease;
+        uint8 karmicDecrease;
+        uint8 foodIncrease;
+        uint8 foodDecrease;
+        uint8 coinIncrease;
+        uint8 coinDecrease;
+        uint8 luckIncrease;
+        uint8 luckDecrease;
+    }
+
+    /**
+     * @dev Struct representing the equiped item of Familiar
+     */
+    struct EquipItems {
+        uint256 head;
+        uint256 mouth;
     }
 
     /**
@@ -41,6 +70,13 @@ library FamiliarsLib {
     event GetCurrentLocation(uint256 indexed tokenId, string location);
     event SetHealth(uint256 indexed tokenId, uint256 health);
     event SetLocationRequirements(Location location, Requirements req);
+    event KarmicExchanged(
+        address indexed user,
+        uint256 karmicAmount,
+        uint256 coinsReceived,
+        uint256 foodReceived
+    );
+    event SetVerifier(address indexed _newVerifier);
 
     // Custom errors
     error InsufficientHealth(uint8 required, uint256 current);
@@ -99,5 +135,28 @@ library FamiliarsLib {
         if (_currentCoins < req.coinCost) {
             revert InsufficientCoins(req.coinCost, _currentCoins);
         }
+    }
+
+    /**
+     * @dev Verifies the signature of a gift claim.
+     * @param _nonce The nonce of the contract.
+     * @param _chainId The chainId of the contract where is deployed.
+     * @param _caller The address of the receiver.
+     * @param _signature The signature to verify.
+     * @return signer The address of the signer.
+     */
+    function getVerifier(
+        uint256 _nonce,
+        uint256 _chainId,
+        address _caller,
+        bytes calldata _signature
+    ) internal pure returns (address signer) {
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(_nonce, _chainId, _caller)
+        );
+        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(
+            messageHash
+        );
+        return ECDSA.recover(ethSignedMessageHash, _signature);
     }
 }

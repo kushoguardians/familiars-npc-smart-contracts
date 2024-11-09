@@ -17,8 +17,11 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
      * @dev Operator contract address
      */
     address public operator;
-    // Mapping to track whitelisted addresses
-    mapping(address => bool) private _whitelist;
+
+    /**
+     * @dev Marketplace contract address
+     */
+    address public marketplace;
 
     /**
      * @dev Constructor initializes the coin contract
@@ -30,18 +33,23 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
         ERC20Permit("Coins")
     {
         operator = _msgSender();
+        marketplace = _msgSender();
     }
 
     // Events
     event SetNewOperator(address indexed newOpertor);
+    event SetNewMarketplace(address indexed newMarketplace);
 
     /**
-     * @dev Modifier to restrict function access to only the specified operator
+     * @dev Modifier to restrict function access to only the specified operator/marketplace
      * @param _caller The address of the function caller
-     * @dev Throws if the caller is not the authorized operator
+     * @dev Throws if the caller is not the authorized operator/marketplace
      */
-    modifier onlyOperator(address _caller) {
-        require(operator == _caller, "Caller is not the operator");
+    modifier onlyOperatorOrMarketplace(address _caller) {
+        require(
+            operator == _caller || marketplace == _caller,
+            "Caller is not the operator or marketplace"
+        );
         _;
     }
 
@@ -49,72 +57,14 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
      * @dev Mints new coins to a specified address
      * @param to Address to receive the coins
      * @param amount Amount of coins to mint (before decimals)
-     * @notice Only callable by contract owner
+     * @notice Only callable by contract operator/marketplace
      */
     function mint(
         address to,
         uint256 amount
-    ) public onlyOperator(_msgSender()) {
+    ) public onlyOperatorOrMarketplace(_msgSender()) {
         uint256 mintAmount = amount * (10 ** decimals());
         _mint(to, mintAmount);
-    }
-
-    /**
-     * @dev Override of ERC20 transfer function with whitelist check
-     * @param recipient Address to receive the coins
-     * @param amount Amount of coins to transfer
-     * @return bool indicating success
-     * @notice Only whitelisted addresses can initiate transfers
-     */
-    function transfer(
-        address recipient,
-        uint256 amount
-    ) public override returns (bool) {
-        require(
-            _whitelist[msg.sender],
-            "Only whitelisted addresses can initiate transfers"
-        );
-        _transfer(_msgSender(), recipient, amount);
-        return true;
-    }
-
-    /**
-     * @dev Override of ERC20 transferFrom function with whitelist check
-     * @param sender Address sending the coins
-     * @param recipient Address receiving the coins
-     * @param amount Amount of coins to transfer
-     * @return bool indicating success
-     * @notice Only whitelisted addresses can initiate transfers
-     */
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) public override returns (bool) {
-        require(
-            _whitelist[sender],
-            "Only whitelisted addresses can initiate transfers"
-        );
-        _transfer(sender, recipient, amount);
-        _approve(
-            sender,
-            _msgSender(),
-            allowance(sender, _msgSender()) - amount
-        );
-        return true;
-    }
-
-    /**
-     * @dev Adds or removes an address from the whitelist
-     * @param account Address to modify whitelist status
-     * @param value Boolean indicating whitelist status
-     * @notice Only callable by contract operator
-     */
-    function setWhitelisted(
-        address account,
-        bool value
-    ) external onlyOperator(_msgSender()) {
-        _whitelist[account] = value;
     }
 
     /**
@@ -125,5 +75,15 @@ contract Coins is ERC20, Ownable, ERC20Permit, ERC20Burnable {
     function setOperator(address _newOperator) external onlyOwner {
         operator = _newOperator;
         emit SetNewOperator(_newOperator);
+    }
+
+    /**
+     * @dev Update marketplace address
+     * @param _marketplace Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setMarketplace(address _marketplace) external onlyOwner {
+        marketplace = _marketplace;
+        emit SetNewMarketplace(_marketplace);
     }
 }

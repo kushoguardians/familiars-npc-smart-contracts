@@ -3,18 +3,22 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
 
 /**
  * @title KarmicEnergy
  * @dev Implementation of ERC1155 token for KarmicEnergy resources in the game
  * @notice This contract manages the KarmicEnergy resource which can be minted and burned
  */
-contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
+contract KarmicEnergy is ERC1155, Ownable {
     /**
      * @dev Operator contract address
      */
-     address public operator;
+    address public operator;
+
+    /**
+     * @dev Marketplace contract address
+     */
+    address public marketplace;
 
     /**
      * @dev Constructor initializes the contract with IPFS URI for token metadata
@@ -25,27 +29,34 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
         Ownable(_msgSender())
     {
         operator = _msgSender();
+        marketplace = _msgSender();
     }
 
     // Events
     event SetNewOperator(address indexed newOpertor);
+    event SetNewMarketplace(address indexed newMarketplace);
 
     /**
-     * @dev Modifier to restrict function access to only the specified operator
+     * @dev Modifier to restrict function access to only the specified operator/marketplace
      * @param _caller The address of the function caller
-     * @dev Throws if the caller is not the authorized operator
+     * @dev Throws if the caller is not the authorized operator/marketplace
      */
-    modifier onlyOperator(address _caller) {
-        require(operator == _caller, "Caller is not the operator");
+    modifier onlyOperatorOrMarketplace(address _caller) {
+        require(
+            operator == _caller || marketplace == _caller,
+            "Caller is not the operator or marketplace"
+        );
         _;
     }
 
     /**
      * @dev Updates the base URI for token metadata
      * @param newuri New URI to be set
-     * @notice Only callable by contract operator
+     * @notice Only callable by contract operator/marketplace
      */
-    function setURI(string memory newuri) public onlyOperator(_msgSender()) {
+    function setURI(
+        string memory newuri
+    ) public onlyOperatorOrMarketplace(_msgSender()) {
         _setURI(newuri);
     }
 
@@ -53,9 +64,12 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
      * @dev Mints KarmicEnergy tokens
      * @param account Address to receive the tokens
      * @param amount Amount of tokens to mint
-     * @notice Only callable by contract operator, always mints token ID 0
+     * @notice Only callable by contract operator/marketplace
      */
-    function mint(address account, uint256 amount) public onlyOperator(_msgSender()) {
+    function mint(
+        address account,
+        uint256 amount
+    ) public onlyOperatorOrMarketplace(_msgSender()) {
         _mint(account, 0, amount, new bytes(0));
     }
 
@@ -65,14 +79,14 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
      * @param ids Array of token IDs to mint
      * @param amounts Array of amounts to mint for each token ID
      * @param data Additional data to pass to receivers
-     * @notice Only callable by contract operator
+     * @notice Only callable by contract operator/marketplace
      */
     function mintBatch(
         address to,
         uint256[] memory ids,
         uint256[] memory amounts,
         bytes memory data
-    ) public onlyOperator(_msgSender()) {
+    ) public onlyOperatorOrMarketplace(_msgSender()) {
         _mintBatch(to, ids, amounts, data);
     }
 
@@ -81,14 +95,14 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
      * @param account Address to burn tokens from
      * @param id Token ID to burn
      * @param value Amount of tokens to burn
-     * @notice Only callable by contract operator
+     * @notice Only callable by contract operator/marketplace
      */
     function burn(
         address account,
         uint256 id,
         uint256 value
-    ) public virtual override onlyOperator(_msgSender()) {
-        super.burn(account, id, value);
+    ) public virtual onlyOperatorOrMarketplace(_msgSender()) {
+        _burn(account, id, value);
     }
 
     /**
@@ -96,14 +110,14 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
      * @param account Address to burn tokens from
      * @param ids Array of token IDs to burn
      * @param values Array of amounts to burn for each token ID
-     * @notice Only callable by contract operator
+     * @notice Only callable by contract operator/marketplace
      */
     function burnBatch(
         address account,
         uint256[] memory ids,
         uint256[] memory values
-    ) public virtual override onlyOperator(_msgSender()) {
-        super.burnBatch(account, ids, values);
+    ) public virtual onlyOperatorOrMarketplace(_msgSender()) {
+        _burnBatch(account, ids, values);
     }
 
     /**
@@ -114,5 +128,15 @@ contract KarmicEnergy is ERC1155, ERC1155Burnable, Ownable {
     function setOperator(address _newOperator) external onlyOwner {
         operator = _newOperator;
         emit SetNewOperator(_newOperator);
+    }
+
+    /**
+     * @dev Update marketplace address
+     * @param _marketplace Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setMarketplace(address _marketplace) external onlyOwner {
+        marketplace = _marketplace;
+        emit SetNewMarketplace(_marketplace);
     }
 }

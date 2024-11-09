@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 // Import required OpenZeppelin contracts for standard implementations
 import "@openzeppelin/contracts/access/Ownable.sol"; // Provides basic access control
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol"; // Base NFT implementation
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol"; // Adds URI storage capabilities
 import "./FamiliarsLib.sol";
 
@@ -24,6 +25,10 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      */
     address public operator;
     /**
+     * @dev Checker address that check equipable items if still in the account
+     */
+    address public checker;
+    /**
      * @dev Counter for the next token ID to be minted
      */
     uint256 private _nextTokenId;
@@ -35,6 +40,12 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
 
     // Events
     event SetNewOperator(address indexed newOpertor);
+
+    /**
+     * @dev Mapping to track equipped item of familiar
+     * @notice Private to enforce access through getter/setter functions
+     */
+    mapping(uint256 => FamiliarsLib.EquipItems) private equippedItem;
 
     /**
      * @dev Mapping to track the current location of each token
@@ -50,7 +61,7 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
 
     // Mapping to track requirements needed for each location
     mapping(FamiliarsLib.Location => FamiliarsLib.Requirements)
-        public locationRequirements;
+        private locationRequirements;
 
     /**
      * @dev Modifier to verify token existence before operations
@@ -86,13 +97,14 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
     function safeMint(
         address _to,
         string memory _uri
-    ) external onlyOperator(_msgSender()) {
+    ) external onlyOperator(_msgSender()) returns (uint256) {
         uint256 tokenId = _nextTokenId + 1;
         latestTokenId = tokenId;
         _safeMint(_to, tokenId);
         _setTokenURI(tokenId, _uri);
-        tokenHealth[tokenId] = 50;
+        tokenHealth[tokenId] = 100;
         tokenLocation[tokenId] = FamiliarsLib.Location.HOME;
+        return tokenId;
     }
 
     /**
@@ -105,7 +117,7 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
         uint256 _tokenId,
         uint8 _health
     ) external onlyOperator(_msgSender()) tokenExists(_tokenId) {
-        require(_health > 0 && _health <= 50, "Health out of range");
+        require(_health > 0 && _health <= 100, "Health out of range");
         tokenHealth[_tokenId] = _health;
         emit FamiliarsLib.SetHealth(_tokenId, _health);
     }
@@ -144,11 +156,7 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
     function setLocationRequirements(
         FamiliarsLib.Location _location,
         FamiliarsLib.Requirements memory _requirements
-    )
-        external
-        onlyOperator(_msgSender())
-        returns (FamiliarsLib.Requirements memory)
-    {
+    ) external onlyOwner returns (FamiliarsLib.Requirements memory) {
         locationRequirements[_location] = _requirements;
         emit FamiliarsLib.SetLocationRequirements(_location, _requirements);
         return _requirements;
@@ -161,9 +169,9 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      */
     function getCurrentLocation(
         uint256 _tokenId
-    ) external view tokenExists(_tokenId) returns (string memory) {
+    ) external view tokenExists(_tokenId) returns (string memory, FamiliarsLib.Location) {
         FamiliarsLib.Location _location = tokenLocation[_tokenId];
-        return locationToString(_location);
+        return (locationToString(_location), _location);
     }
 
     /**
@@ -188,14 +196,83 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
     function locationToString(
         FamiliarsLib.Location _location
     ) internal pure returns (string memory) {
-        if (_location == FamiliarsLib.Location.KARMIC_WELLSPRING)
-            return "Karmic Wellspring";
-        if (_location == FamiliarsLib.Location.HOME) return "Home";
-        if (_location == FamiliarsLib.Location.KARMIC_TOWER)
-            return "Karmic Tower";
-        if (_location == FamiliarsLib.Location.GATHERING_AREA)
-            return "Gathering Area";
-        return "Home";
+        // Define an array of location names corresponding to the enum values
+        string[5] memory locationNames = [
+            "Karmic Wellspring", // Assuming this is the first enum value
+            "Karmic Tower",
+            "Home",
+            "Gathering Area",
+            "Marketplace"
+        ];
+
+        // Convert the enum to its underlying integer value and return the corresponding string
+        uint256 index = uint256(_location);
+        if (index < locationNames.length) {
+            return locationNames[index];
+        }
+
+        // Default case if the index is out of bounds
+        return "Unknown Location";
+    }
+
+    /**
+     * @dev Equip Items
+     * @param _tokenId The token ID to equip items to
+     * @param _mouthTokenId The token ID of the mouth item
+     * @param _headTokenId The token ID of the head item
+     * @param _tba The address of the token balance account
+     * @param _familiarItems The address of the ERC1155 contract for items
+     * @notice Only callable by contract Operator
+     */
+    function equipItem(
+        uint256 _tokenId,
+        uint256 _mouthTokenId,
+        uint256 _headTokenId,
+        address _tba,
+        address _familiarItems
+    ) external onlyOperator(_msgSender()) tokenExists(_tokenId) {
+        require(
+            _mouthTokenId != _headTokenId,
+            "Mouth and head equippable nft should not equal."
+        );
+        IERC1155 items = IERC1155(_familiarItems);
+        uint256 headBal = items.balanceOf(_tba, _headTokenId);
+        uint256 mouthBal = items.balanceOf(_tba, _mouthTokenId);
+
+        // Initialize equipped items
+        FamiliarsLib.EquipItems memory newEquippedItems = FamiliarsLib
+            .EquipItems({mouth: 0, head: 0});
+
+        // Equip mouth item if balance is greater than 0
+        if (mouthBal > 0) {
+            newEquippedItems.mouth = _mouthTokenId;
+        }
+
+        // Equip head item if balance is greater than 0
+        if (headBal > 0) {
+            newEquippedItems.head = _headTokenId;
+        }
+
+        // Store the equipped items in the mapping
+        equippedItem[_tokenId] = newEquippedItems;
+    }
+
+    /**
+     * @dev Retrieves the equipped items for a given token ID.
+     * @param _tokenId The token ID for which to retrieve equipped items.
+     * @return A struct containing the equipped mouth and head item IDs.
+     * @notice This function can only be called if the token exists.
+     */
+    function getEquippedItems(
+        uint256 _tokenId
+    )
+        external
+        view
+        tokenExists(_tokenId)
+        returns (FamiliarsLib.EquipItems memory)
+    {
+        FamiliarsLib.EquipItems memory _equippedItems = equippedItem[_tokenId];
+        return _equippedItems;
     }
 
     /**
