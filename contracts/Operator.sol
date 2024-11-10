@@ -12,7 +12,6 @@ import "./Food.sol";
 import "./FamiliarsItem.sol";
 import "./Marketplace.sol";
 import "./ERC6551Registry.sol";
-import "hardhat/console.sol";
 
 /**
  * @title Operator

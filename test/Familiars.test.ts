@@ -101,8 +101,12 @@ describe("Familiars Contract", function () {
 
     it("Should increment token IDs correctly", async function () {
       await familiars.connect(addr1).safeMint(addr2.address, TOKEN_URI);
+      await familiars.connect(addr1).safeMint(addr2.address, TOKEN_URI);
+      await familiars.connect(addr1).safeMint(addr2.address, TOKEN_URI);
+      await familiars.connect(addr1).safeMint(addr2.address, TOKEN_URI);
+      await familiars.connect(addr1).safeMint(addr2.address, TOKEN_URI);
 
-      expect(await familiars.latestTokenId()).to.equal(1);
+      expect(await familiars.latestTokenId()).to.equal(5);
     });
   });
 

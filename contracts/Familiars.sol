@@ -25,10 +25,6 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      */
     address public operator;
     /**
-     * @dev Checker address that check equipable items if still in the account
-     */
-    address public checker;
-    /**
      * @dev Counter for the next token ID to be minted
      */
     uint256 private _nextTokenId;
@@ -82,10 +78,23 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
     }
 
     /**
+     * @dev Modifier to restrict function access to only the specified operator or owner
+     * @dev Throws if the caller is not the authorized operator or owner
+     */
+    modifier onlyOperatorOrOwner() {
+        require(
+            operator == _msgSender() || _msgSender() == owner(),
+            "Caller is not the operator or the owner"
+        );
+        _;
+    }
+
+    /**
      * @dev Constructor initializes the ERC721 token with name "Familiars" and symbol "FMLRS"
      */
     constructor() ERC721("Familiars", "FMLRS") Ownable(_msgSender()) {
         operator = _msgSender();
+        _nextTokenId = 1;
     }
 
     /**
@@ -98,13 +107,27 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
         address _to,
         string memory _uri
     ) external onlyOperator(_msgSender()) returns (uint256) {
-        uint256 tokenId = _nextTokenId + 1;
+        uint256 tokenId = _nextTokenId;
         latestTokenId = tokenId;
         _safeMint(_to, tokenId);
         _setTokenURI(tokenId, _uri);
         tokenHealth[tokenId] = 100;
         tokenLocation[tokenId] = FamiliarsLib.Location.HOME;
+        _nextTokenId = tokenId + 1;
         return tokenId;
+    }
+
+    /**
+     * @dev Change URI of the tokenid used for equip
+     * @param _tokenId Address to receive the minted token
+     * @param _uri The token URI containing metadata
+     * @notice Only callable by contract operator or owner
+     */
+    function changeTokenURI(
+        uint256 _tokenId,
+        string memory _uri
+    ) external onlyOperatorOrOwner {
+        _setTokenURI(_tokenId, _uri);
     }
 
     /**
@@ -169,7 +192,12 @@ contract Familiars is ERC721, Ownable, ERC721URIStorage {
      */
     function getCurrentLocation(
         uint256 _tokenId
-    ) external view tokenExists(_tokenId) returns (string memory, FamiliarsLib.Location) {
+    )
+        external
+        view
+        tokenExists(_tokenId)
+        returns (string memory, FamiliarsLib.Location)
+    {
         FamiliarsLib.Location _location = tokenLocation[_tokenId];
         return (locationToString(_location), _location);
     }
