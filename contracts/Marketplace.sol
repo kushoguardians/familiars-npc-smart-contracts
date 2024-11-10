@@ -34,13 +34,10 @@ contract Marketplace is Ownable, Pausable, ReentrancyGuard {
         coins = Coins(_coins);
     }
 
-    // Exchange rates mapping
-    mapping(uint256 => uint256) public karmicToCoins;
-    mapping(uint256 => uint256) public karmicToFood;
-    mapping(uint256 => bool) public validKarmicAmt;
-
     // Events
     event SetNewOperator(address indexed newOpertor);
+    event FoodExchange(address indexed tba, uint256 coins, uint256 food);
+    event BuyTreasureBox(address indexed tba, uint256 getCoins);
 
     /**
      * @dev Modifier to restrict function access to only the specified operator
@@ -53,129 +50,69 @@ contract Marketplace is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Exchange karmic energy for food and coins
-     * @param _karmicAmount Amount of karmic energy to exchange
+     * @dev Exchange coins to food
+     * @param _coinsAmt amount of coins to exchange
      * @param _tba TBA
+     * @dev Throws if the caller is not the authorized operator
      */
-    function exchangeKarmicEnergy(
-        uint256 _karmicAmount,
+    function exchangeCoinsToFood(
+        uint256 _coinsAmt,
         address _tba
-    ) external onlyOperator(_msgSender()) whenNotPaused {
-        require(_karmicAmount > 0, "Amount must be greater than 0");
-        require(validKarmicAmt[_karmicAmount], "Amount must be on valid tier");
+    ) public onlyOperator(_msgSender()) whenNotPaused {
+        require(_coinsAmt > 0, "Amount must be greater than 0");
+        uint256 coinsBal = coins.balanceOf(_tba);
+        uint256 amt = _coinsAmt * (10 ** coins.decimals());
+        require(coinsBal >= amt, "Not enough coins");
 
-        uint256 karmicBal = karmicEnergy.balanceOf(_tba, 0);
-        require(karmicBal >= _karmicAmount, "Not enough karmic energy");
-
-        // Calculate rewards
-        (uint256 coinsToMint, uint256 foodToMint) = _calculateRewards(
-            _karmicAmount
-        );
-        require(coinsToMint > 0 && foodToMint > 0, "Invalid exchange amount");
-
-        // Burn karmic energy
-        karmicEnergy.burn(_tba, 0, _karmicAmount);
-
-        // Mint rewards
-        food.mint(_tba, foodToMint);
-        coins.mint(_tba, coinsToMint);
-
-        emit FamiliarsLib.KarmicExchanged(
-            _tba,
-            _karmicAmount,
-            coinsToMint,
-            foodToMint
-        );
+        coins.burnCoins(_tba, amt);
+        food.mint(_tba, _coinsAmt);
+        emit FoodExchange(_tba, _coinsAmt, _coinsAmt);
     }
 
     /**
-     * @dev Add or update exchange rate
-     * @param _karmicAmount Amount of karmic energy required
-     * @param _coinsReward Amount of coins to reward
-     * @param _foodReward Amount of food to reward
+     * @dev Buy Treasure box get 1 -20 coins
+     * @param _tba TBA
+     * @dev Throws if the caller is not the authorized operator
      */
-    function addExchangeRate(
-        uint256 _karmicAmount,
-        uint256 _coinsReward,
-        uint256 _foodReward
-    ) external onlyOwner {
-        require(_karmicAmount > 0, "Invalid karmic amount");
-        require(_coinsReward > 0 || _foodReward > 0, "Invalid rewards");
+    function buyTreasureBox(
+        address _tba
+    ) public onlyOperator(_msgSender()) whenNotPaused {
+        uint256 coinsBal = coins.balanceOf(_tba);
+        uint256 price = 5 * (10 ** coins.decimals());
+        require(coinsBal >= price, "Not enough coins");
 
-        if (!validKarmicAmt[_karmicAmount]) {
-            validKarmicAmt[_karmicAmount] = true;
-        }
+        coins.burnCoins(_tba, price);
 
-        karmicToCoins[_karmicAmount] = _coinsReward;
-        karmicToFood[_karmicAmount] = _foodReward;
+        uint256 getCoins = _generateRandomNumber(20);
+
+        coins.mint(_tba, getCoins);
+        emit BuyTreasureBox(_tba, getCoins);
     }
 
     /**
-     * @dev update exchange rate
-     * @param _karmicAmount Amount of karmic energy to remove
-     * @param _coinsReward Amount of coins to reward
-     * @param _foodReward Amount of food to reward
+     * @dev Internal function Update operator address
+     * @param maxRange max generation number
+     * @return uint256
      */
-    function updateExchangeRate(
-        uint256 _karmicAmount,
-        uint256 _coinsReward,
-        uint256 _foodReward
-    ) external onlyOwner {
-        require(validKarmicAmt[_karmicAmount], "Exchange rate does not exist");
+    function _generateRandomNumber(
+        uint maxRange
+    ) internal view returns (uint256) {
+        require(maxRange > 0, "Range must be greater than 0");
 
-        validKarmicAmt[_karmicAmount] = true;
-        karmicToCoins[_karmicAmount] = _coinsReward;
-        karmicToFood[_karmicAmount] = _foodReward;
-    }
+        // Using block information and timestamp to generate pseudo-random number
+        uint256 randomNumber = (uint(
+            keccak256(
+                abi.encodePacked(
+                    block.timestamp,
+                    block.prevrandao,
+                    block.number,
+                    block.coinbase,
+                    address(this)
+                )
+            )
+        ) % maxRange) + 1; // Modulo maxRange plus 1 to get number between 1 and maxRange
 
-    /**
-     * @dev Remove exchange rate
-     * @param _karmicAmount Amount of karmic energy to remove
-     */
-    function removeExchangeRate(uint256 _karmicAmount) external onlyOwner {
-        require(validKarmicAmt[_karmicAmount], "Exchange rate does not exist");
-
-        validKarmicAmt[_karmicAmount] = false;
-        karmicToCoins[_karmicAmount] = 0;
-        karmicToFood[_karmicAmount] = 0;
-    }
-
-    /**
-     * @dev Internal function to calculate rewards based on karmic energy amount
-     */
-    function _calculateRewards(
-        uint256 _karmicAmount
-    ) public view returns (uint256 coinsReward, uint256 foodReward) {
-        uint256 totalCoins = karmicToCoins[_karmicAmount];
-        uint256 totalFood = karmicToCoins[_karmicAmount];
-
-        return (totalCoins, totalFood);
-    }
-
-    /**
-     * @dev Update operator address
-     * @param _newOperator Address new operator
-     * @notice Only callable by contract owner
-     */
-    function setOperator(address _newOperator) external onlyOwner {
-        operator = _newOperator;
-        emit SetNewOperator(_newOperator);
-    }
-
-    /**
-     * @dev Internal function to add or update exchange rate
-     */
-    function _addExchangeRate(
-        uint256 _karmicAmount,
-        uint256 _coinsReward,
-        uint256 _foodReward
-    ) internal {
-        bool _karmicAmt = validKarmicAmt[_karmicAmount];
-        if (!_karmicAmt) {
-            validKarmicAmt[_karmicAmount] = true;
-        }
-        karmicToCoins[_karmicAmount] = _coinsReward;
-        karmicToFood[_karmicAmount] = _foodReward;
+        return randomNumber;
     }
 
     /**
@@ -190,5 +127,13 @@ contract Marketplace is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    //TODO: Add tresurebox/gacha system
+    /**
+     * @dev Update operator address
+     * @param _newOperator Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setOperator(address _newOperator) external onlyOwner {
+        operator = _newOperator;
+        emit SetNewOperator(_newOperator);
+    }
 }

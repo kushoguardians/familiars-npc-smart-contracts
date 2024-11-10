@@ -21,6 +21,11 @@ contract Food is ERC1155, Ownable {
     address public marketplace;
 
     /**
+     * @dev karmicSpring contract address
+     */
+    address public karmicSpring;
+
+    /**
      * @dev Constructor initializes the contract with IPFS URI for token metadata
      * @notice Sets the initial URI and transfers ownership to the deployer
      */
@@ -35,15 +40,17 @@ contract Food is ERC1155, Ownable {
     // Events
     event SetNewOperator(address indexed newOpertor);
     event SetNewMarketplace(address indexed newMarketplace);
+    event SetNewKarmicWellSpring(address indexed newKarmic);
 
     /**
      * @dev Modifier to restrict function access to only the specified operator/marketplace
-     * @param _caller The address of the function caller
      * @dev Throws if the caller is not the authorized operator/marketplace
      */
-    modifier onlyOperatorOrMarketplace(address _caller) {
+    modifier onlyOperators() {
         require(
-            operator == _caller || marketplace == _caller,
+            operator == _msgSender() ||
+                marketplace == _msgSender() ||
+                karmicSpring == _msgSender(),
             "Caller is not the operator or marketplace"
         );
         _;
@@ -56,7 +63,7 @@ contract Food is ERC1155, Ownable {
      */
     function setURI(
         string memory newuri
-    ) public onlyOperatorOrMarketplace(_msgSender()) {
+    ) public onlyOperators {
         _setURI(newuri);
     }
 
@@ -69,7 +76,7 @@ contract Food is ERC1155, Ownable {
     function mint(
         address account,
         uint256 amount
-    ) public onlyOperatorOrMarketplace(_msgSender()) {
+    ) public onlyOperators{
         _mint(account, 0, amount, new bytes(0));
     }
 
@@ -86,7 +93,7 @@ contract Food is ERC1155, Ownable {
         uint256[] memory ids,
         uint256[] memory amounts,
         bytes memory data
-    ) public onlyOperatorOrMarketplace(_msgSender()) {
+    ) public onlyOperators {
         _mintBatch(to, ids, amounts, data);
     }
 
@@ -101,7 +108,7 @@ contract Food is ERC1155, Ownable {
         address account,
         uint256 id,
         uint256 value
-    ) public virtual onlyOperatorOrMarketplace(_msgSender()) {
+    ) public virtual onlyOperators {
         _burn(account, id, value);
     }
 
@@ -116,7 +123,7 @@ contract Food is ERC1155, Ownable {
         address account,
         uint256[] memory ids,
         uint256[] memory values
-    ) public virtual onlyOperatorOrMarketplace(_msgSender()) {
+    ) public virtual onlyOperators {
         _burnBatch(account, ids, values);
     }
 
@@ -138,5 +145,15 @@ contract Food is ERC1155, Ownable {
     function setMarketplace(address _marketplace) external onlyOwner {
         marketplace = _marketplace;
         emit SetNewMarketplace(_marketplace);
+    }
+
+    /**
+     * @dev Update karmic sprinf address
+     * @param _karmicWellspring Address new operator
+     * @notice Only callable by contract owner
+     */
+    function setKarmicWellSpring(address _karmicWellspring) external onlyOwner {
+        karmicSpring = _karmicWellspring;
+        emit SetNewKarmicWellSpring(_karmicWellspring);
     }
 }

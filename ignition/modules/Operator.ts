@@ -19,10 +19,17 @@ const OperatorModule = buildModule("OperatorModule", (m) => {
   const familiarsItemModule = m.useModule(FamiliarsItemModule);
 
   // Deploy marketplace with tokens
-  const marketplace = m.contract("Marketplace", [
+  const karmicwellspring = m.contract("KarmicWellSpring", [
+    karmicEnergyModule.karmicEnergy,
     foodModule.food,
     coinsModule.coins,
-    karmicEnergyModule.karmicEnergy
+  ]);
+
+  // Deploy marketplace with tokens
+  const marketplace = m.contract("Marketplace", [
+    karmicEnergyModule.karmicEnergy,
+    foodModule.food,
+    coinsModule.coins,
   ]);
 
   const lib = m.library("FamiliarsLib");
@@ -34,7 +41,8 @@ const OperatorModule = buildModule("OperatorModule", (m) => {
       coinsModule.coins,
       karmicEnergyModule.karmicEnergy,
       familiarsItemModule.familiarsItem,
-      marketplace,  // Using the marketplace we just deployed
+      marketplace, // Using the marketplace we just deployed
+      karmicwellspring,
       registryModule.reg,
       accountModule.account,
     ],
@@ -54,9 +62,16 @@ const OperatorModule = buildModule("OperatorModule", (m) => {
   m.call(coinsModule.coins, "setMarketplace", [marketplace]);
   m.call(karmicEnergyModule.karmicEnergy, "setMarketplace", [marketplace]);
   m.call(familiarsItemModule.familiarsItem, "setMarketplace", [marketplace]);
+
+  m.call(foodModule.food, "setKarmicWellSpring", [karmicwellspring]);
+  m.call(coinsModule.coins, "setKarmicWellSpring", [karmicwellspring]);
+  m.call(karmicEnergyModule.karmicEnergy, "setKarmicWellSpring", [
+    karmicwellspring,
+  ]);
+
   m.call(marketplace, "setOperator", [operator]);
 
-  return { operator, marketplace };
+  return { operator, marketplace,karmicwellspring };
 });
 
 export default OperatorModule;

@@ -12,6 +12,7 @@ import "./Food.sol";
 import "./FamiliarsItem.sol";
 import "./Marketplace.sol";
 import "./ERC6551Registry.sol";
+import "./KarmicWellSpring.sol";
 
 /**
  * @title Operator
@@ -29,6 +30,7 @@ contract Operator is Ownable, Pausable {
     Food public food; // Contract managing Food resource
     FamiliarsItem public familiarsItem; // Contract of familiar items equippable
     Marketplace public marketplace;
+    KarmicWellSpring public karmicWellSpring;
 
     // Address authorized to verify certain operations
     address verifier;
@@ -53,6 +55,7 @@ contract Operator is Ownable, Pausable {
         address _karmicEnergy,
         address _familiarsItem,
         address _marketplace,
+        address _karmicWellSpring,
         address _tbaRegistry,
         address _tbaAccountImpl
     ) Ownable(_msgSender()) {
@@ -63,6 +66,7 @@ contract Operator is Ownable, Pausable {
         karmicEnergy = KarmicEnergy(_karmicEnergy);
         familiarsItem = FamiliarsItem(_familiarsItem);
         marketplace = Marketplace(_marketplace);
+        karmicWellSpring = KarmicWellSpring(_karmicWellSpring);
         TBA_REGISTRY = _tbaRegistry;
         TBA_IMPL = _tbaAccountImpl;
         nonce = 1;
@@ -214,10 +218,52 @@ contract Operator is Ownable, Pausable {
         require(tba != address(0), "Token not bound to address");
         (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
         require(
+            loc == FamiliarsLib.Location.KARMIC_WELLSPRING,
+            "NPC location should be on Karmic Wellspring"
+        );
+        karmicWellSpring.exchangeKarmicEnergy(_karmicEnergyAmt, tba);
+        nonce += 1;
+    }
+
+    /**
+     * @dev Exchanges coins for food
+     * @param _tokenId The ID of the token to exchange energy for
+     * @param _coinsAmt The amount of coins to exchange
+     * @param _signature The signature of the verifier
+     */
+    function buyFoodToMarketplace(
+        uint256 _tokenId,
+        uint256 _coinsAmt,
+        bytes calldata _signature
+    ) external whenNotPaused validSig(_signature) {
+        address tba = _getTba(_tokenId);
+        require(tba != address(0), "Token not bound to address");
+        (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
+        require(
             loc == FamiliarsLib.Location.MARKET_PLACE,
             "NPC location should be on marketplace"
         );
-        marketplace.exchangeKarmicEnergy(_karmicEnergyAmt, tba);
+        marketplace.exchangeCoinsToFood(_coinsAmt, tba);
+        nonce += 1;
+    }
+
+    /**
+     * @dev Exchanges coins to tresurebox
+     * @param _tokenId The ID of the token to exchange energy for
+     * @param _signature The signature of the verifier
+     */
+    function buyTreasureBox(
+        uint256 _tokenId,
+        bytes calldata _signature
+    ) external whenNotPaused validSig(_signature) {
+        address tba = _getTba(_tokenId);
+        require(tba != address(0), "Token not bound to address");
+        (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
+        require(
+            loc == FamiliarsLib.Location.MARKET_PLACE,
+            "NPC location should be on marketplace"
+        );
+        marketplace.buyTreasureBox(tba);
         nonce += 1;
     }
 
