@@ -152,7 +152,7 @@ describe("Operator Contract", function () {
       );
       const signature = await owner.signMessage(ethers.getBytes(message));
 
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
       expect(await familiars.ownerOf(1)).to.equal(addr1.address);
       expect(await operator.nonce()).to.equal(nonce + 1n);
     });
@@ -166,35 +166,73 @@ describe("Operator Contract", function () {
       const signature = await addr1.signMessage(ethers.getBytes(message));
 
       await expect(
-        operator.createNPC(addr1.address, TOKEN_URI, signature, "0x")
+        operator.createNPC(addr1.address, TOKEN_URI, signature)
       ).to.be.revertedWith("Invalid signature");
     });
   });
 
   describe("Location Movement", function () {
+    const itemAttributes = {
+      healthIncrease: 0,
+      healthDecrease: 0,
+      karmicIncrease: 5,
+      karmicDecrease: 0,
+      foodIncrease: 0,
+      foodDecrease: 0,
+      coinIncrease: 0,
+      coinDecrease: 0,
+      luckIncrease: 5,
+      luckDecrease: 0,
+    };
     beforeEach(async function () {
-      const nonce = await operator.nonce();
-      const message = ethers.solidityPackedKeccak256(
+      let nonce = await operator.nonce();
+      let message = ethers.solidityPackedKeccak256(
         ["uint256", "uint256", "address"],
         [nonce, CHAIN_ID, owner.address]
       );
-      const signature = await owner.signMessage(ethers.getBytes(message));
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      let signature = await owner.signMessage(ethers.getBytes(message));
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
+
+      const tba = await operator._getTba(1);
+      await familiarsItem.ownerMint(tba, 1, 10, itemAttributes);
+      await familiarsItem.ownerMint(tba, 2, 10, itemAttributes);
     });
 
     it("Should move to location with valid signature", async function () {
       const nonce = await operator.nonce();
       const message = ethers.solidityPackedKeccak256(
         ["uint256", "uint256", "address"],
-        [nonce, CHAIN_ID, owner.address]
+        [nonce, CHAIN_ID, addr1.address]
       );
       const signature = await owner.signMessage(ethers.getBytes(message));
 
-      await operator.goToLocation(1, 3, signature); // 3 = GATHERING_AREA
+      await operator.connect(addr1).goToLocation(1, 3, signature); // 3 = GATHERING_AREA
       expect(await familiars.getCurrentLocation(1)).to.deep.equal([
         "Gathering Area",
         3,
       ]);
+    });
+    it("Should move to location with equipment", async function () {
+      let nonce = await operator.nonce();
+      let message = ethers.solidityPackedKeccak256(
+        ["uint256", "uint256", "address"],
+        [nonce, CHAIN_ID, addr1.address]
+      );
+      let signature = await owner.signMessage(ethers.getBytes(message));
+
+      await operator.connect(addr1).equipItem(1, 1, 2, signature);
+
+      nonce = await operator.nonce();
+      message = ethers.solidityPackedKeccak256(
+        ["uint256", "uint256", "address"],
+        [nonce, CHAIN_ID, addr1.address]
+      );
+      signature = await owner.signMessage(ethers.getBytes(message));
+
+      await operator.connect(addr1).goToLocation(1, 3, signature);
+      const stats = await operator.getNPCStats(1);
+
+      expect(stats[3]).to.be.gt(4);
     });
   });
 
@@ -219,7 +257,7 @@ describe("Operator Contract", function () {
         [nonce, CHAIN_ID, owner.address]
       );
       const signature = await owner.signMessage(ethers.getBytes(message));
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
     });
 
     it("Should equip items with valid signature", async function () {
@@ -231,11 +269,11 @@ describe("Operator Contract", function () {
       let nonce = await operator.nonce();
       let message = ethers.solidityPackedKeccak256(
         ["uint256", "uint256", "address"],
-        [nonce, CHAIN_ID, owner.address]
+        [nonce, CHAIN_ID, addr1.address]
       );
       let signature = await owner.signMessage(ethers.getBytes(message));
 
-      await operator.connect(owner).equipItem(1, 1, 2, signature);
+      await operator.connect(addr1).equipItem(1, 1, 2, signature);
 
       const equippedItems = await familiars.getEquippedItems(1);
 
@@ -252,7 +290,7 @@ describe("Operator Contract", function () {
         [nonce, CHAIN_ID, owner.address]
       );
       const signature = await owner.signMessage(ethers.getBytes(message));
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
     });
 
     it("Should return correct NPC stats", async function () {
@@ -298,7 +336,7 @@ describe("Operator Contract", function () {
         [nonce, CHAIN_ID, owner.address]
       );
       const signature = await owner.signMessage(ethers.getBytes(message));
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
 
       // Set up exchange rates in karmicwellspring
       await karmicwellspring.connect(owner).addExchangeRate(50, 10, 10); // 50 karmic -> 10 coins, 10 food
@@ -359,20 +397,20 @@ describe("Operator Contract", function () {
 
         let message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         let signature = await owner.signMessage(ethers.getBytes(message));
         await familiars.setLocationRequirements(1, requirements);
-        await operator.goToLocation(1, 1, signature);
+        await operator.connect(addr1).goToLocation(1, 1, signature);
         nonce = await operator.nonce();
 
         message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         signature = await owner.signMessage(ethers.getBytes(message));
 
-        await operator.goToLocation(1, 0, signature);
+        await operator.connect(addr1).goToLocation(1, 0, signature);
       });
       it("Should exchange karmic energy for rewards successfully", async function () {
         const tba = await operator._getTba(1);
@@ -380,7 +418,7 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
@@ -390,7 +428,7 @@ describe("Operator Contract", function () {
         const initialFood = await food.balanceOf(tba, 0);
 
         // Exchange 50 karmic energy
-        await operator.exchangeKarmicEnergy(1, 50, signature);
+        await operator.connect(addr1).exchangeKarmicEnergy(1, 50, signature);
         const decimal = await coins.decimals();
         const coinsLatest = 10n * 10n ** decimal;
 
@@ -456,11 +494,13 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.exchangeKarmicEnergy(1, 50, signature))
+        await expect(
+          operator.connect(addr1).exchangeKarmicEnergy(1, 50, signature)
+        )
           .to.emit(karmicwellspring, "KarmicExchanged")
           .withArgs(tba, 50, 10, 10);
       });
@@ -486,21 +526,21 @@ describe("Operator Contract", function () {
 
         let message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         let signature = await owner.signMessage(ethers.getBytes(message));
         await familiars.setLocationRequirements(1, requirements);
         const tba = await operator._getTba(1);
-        await operator.goToLocation(1, 1, signature);
+        await operator.connect(addr1).goToLocation(1, 1, signature);
         nonce = await operator.nonce();
 
         message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         signature = await owner.signMessage(ethers.getBytes(message));
 
-        await operator.goToLocation(1, 0, signature);
+        await operator.connect(addr1).goToLocation(1, 0, signature);
       });
       it("Should handle multiple exchanges correctly", async function () {
         const tba = await operator._getTba(1);
@@ -510,22 +550,22 @@ describe("Operator Contract", function () {
         let nonce = await operator.nonce();
         let message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         let signature = await owner.signMessage(ethers.getBytes(message));
 
         // First exchange - 50 KE should give 10 coins
-        await operator.exchangeKarmicEnergy(1, 50, signature);
+        await operator.connect(addr1).exchangeKarmicEnergy(1, 50, signature);
 
         // Second exchange - 100 KE should give 25 coins
         nonce = await operator.nonce();
         message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         signature = await owner.signMessage(ethers.getBytes(message));
 
-        await operator.exchangeKarmicEnergy(1, 100, signature);
+        await operator.connect(addr1).exchangeKarmicEnergy(1, 100, signature);
 
         const karmicCoinExchange = 35n * 10n ** decimals; // 10 + 25 exchange
 
@@ -572,15 +612,15 @@ describe("Operator Contract", function () {
         [nonce, CHAIN_ID, owner.address]
       );
       let signature = await owner.signMessage(ethers.getBytes(message));
-      await operator.createNPC(addr1.address, TOKEN_URI, signature, "0x");
+      await operator.createNPC(addr1.address, TOKEN_URI, signature);
       nonce = await operator.nonce();
       message = ethers.solidityPackedKeccak256(
         ["uint256", "uint256", "address"],
-        [nonce, CHAIN_ID, owner.address]
+        [nonce, CHAIN_ID, addr1.address]
       );
       signature = await owner.signMessage(ethers.getBytes(message));
       await familiars.setLocationRequirements(1, requirements);
-      await operator.goToLocation(1, 1, signature);
+      await operator.connect(addr1).goToLocation(1, 1, signature);
     });
 
     describe("Buy Treasure Box", function () {
@@ -593,17 +633,17 @@ describe("Operator Contract", function () {
         let nonce = await operator.nonce();
         let message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         let signature = await owner.signMessage(ethers.getBytes(message));
-        await operator.goToLocation(1, 4, signature);
+        await operator.connect(addr1).goToLocation(1, 4, signature);
         nonce = await operator.nonce();
         message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         signature = await owner.signMessage(ethers.getBytes(message));
-        await operator.buyTreasureBox(1, signature);
+        await operator.connect(addr1).buyTreasureBox(1, signature);
 
         const finalCoins = await coins.balanceOf(tba);
 
@@ -618,11 +658,12 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.buyTreasureBox(1, signature)).to.be.reverted;
+        await expect(operator.connect(addr1).buyTreasureBox(1, signature)).to.be
+          .reverted;
       });
 
       it("Should fail to buy treasure box when marketplace is paused", async function () {
@@ -631,11 +672,12 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.buyTreasureBox(1, signature)).to.be.reverted;
+        await expect(operator.connect(addr1).buyTreasureBox(1, signature)).to.be
+          .reverted;
       });
     });
 
@@ -645,10 +687,10 @@ describe("Operator Contract", function () {
         let nonce = await operator.nonce();
         let message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         let signature = await owner.signMessage(ethers.getBytes(message));
-        await operator.goToLocation(1, 4, signature);
+        await operator.connect(addr1).goToLocation(1, 4, signature);
       });
 
       it("Should successfully exchange food for coins", async function () {
@@ -659,12 +701,14 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
         const foodAmount = 50;
-        await operator.buyFoodToMarketplace(1, foodAmount, signature);
+        await operator
+          .connect(addr1)
+          .buyFoodToMarketplace(1, foodAmount, signature);
 
         const finalFood = await food.balanceOf(tba, 0);
         const finalCoins = await coins.balanceOf(tba);
@@ -679,12 +723,13 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.buyFoodToMarketplace(1, 150, signature)).to.be
-          .reverted;
+        await expect(
+          operator.connect(addr1).buyFoodToMarketplace(1, 150, signature)
+        ).to.be.reverted;
       });
 
       it("Should fail to exchange food when marketplace is paused", async function () {
@@ -693,12 +738,13 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.buyFoodToMarketplace(1, 50, signature)).to.be
-          .reverted;
+        await expect(
+          operator.connect(addr1).buyFoodToMarketplace(1, 50, signature)
+        ).to.be.reverted;
       });
 
       it("Should emit FoodExchanged event", async function () {
@@ -708,11 +754,13 @@ describe("Operator Contract", function () {
         const nonce = await operator.nonce();
         const message = ethers.solidityPackedKeccak256(
           ["uint256", "uint256", "address"],
-          [nonce, CHAIN_ID, owner.address]
+          [nonce, CHAIN_ID, addr1.address]
         );
         const signature = await owner.signMessage(ethers.getBytes(message));
 
-        await expect(operator.buyFoodToMarketplace(1, foodAmount, signature))
+        await expect(
+          operator.connect(addr1).buyFoodToMarketplace(1, foodAmount, signature)
+        )
           .to.emit(marketplace, "FoodExchange")
           .withArgs(tba, foodAmount, foodAmount);
       });

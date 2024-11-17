@@ -88,16 +88,14 @@ contract Operator is Ownable, Pausable {
      * @param _to Address to receive the NPC
      * @param _uri Metadata URI for the NPC
      * @param _signature The signature of the verifier
-     * @param _initData The initial data
      */
     function createNPC(
         address _to,
         string memory _uri,
-        bytes calldata _signature,
-        bytes calldata _initData
+        bytes calldata _signature
     ) external whenNotPaused validSig(_signature) {
         uint256 _tokenId = familiars.safeMint(_to, _uri);
-        _createTba(_tokenId, _initData);
+        _createTba(_tokenId);
         nonce += 1;
     }
 
@@ -235,7 +233,7 @@ contract Operator is Ownable, Pausable {
         uint256 _tokenId,
         uint256 _coinsAmt,
         bytes calldata _signature
-    ) external whenNotPaused validSig(_signature) {
+    ) external whenNotPaused validSig(_signature)  {
         address tba = _getTba(_tokenId);
         require(tba != address(0), "Token not bound to address");
         (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
@@ -255,7 +253,7 @@ contract Operator is Ownable, Pausable {
     function buyTreasureBox(
         uint256 _tokenId,
         bytes calldata _signature
-    ) external whenNotPaused validSig(_signature) {
+    ) external whenNotPaused validSig(_signature)  {
         address tba = _getTba(_tokenId);
         require(tba != address(0), "Token not bound to address");
         (, FamiliarsLib.Location loc) = familiars.getCurrentLocation(_tokenId);
@@ -550,19 +548,15 @@ contract Operator is Ownable, Pausable {
      * @param _tokenId Token id of the NFT
      * @return address
      */
-    function _createTba(
-        uint256 _tokenId,
-        bytes calldata initData
-    ) internal returns (address) {
+    function _createTba(uint256 _tokenId) internal returns (address) {
         ERC6551Registry registry = ERC6551Registry(TBA_REGISTRY);
         return
             registry.createAccount(
                 TBA_IMPL,
+                0,
                 CHAINID,
                 address(familiars),
-                _tokenId,
-                3123,
-                initData
+                _tokenId
             );
     }
 
@@ -576,10 +570,10 @@ contract Operator is Ownable, Pausable {
         return
             registry.account(
                 TBA_IMPL,
+                0,
                 CHAINID,
                 address(familiars),
-                _tokenId,
-                3123
+                _tokenId
             );
     }
 
